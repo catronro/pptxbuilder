@@ -11,6 +11,7 @@
  * consistent, branded slides that can be distributed or further reviewed.
  */
 const path = require('node:path');
+const fs = require('node:fs');
 const {
   FREEPORT_THEME,
   textStyle,
@@ -55,6 +56,225 @@ function splitBullets(items = []) {
 
 function listOrEmpty(items) {
   return Array.isArray(items) ? items : [];
+}
+
+function sourceRefPages(sourceRefs = []) {
+  const pages = [];
+  for (const ref of sourceRefs) {
+    const m = String(ref).match(/PAGE\s+(\d+)/i);
+    if (!m) continue;
+    const page = Number(m[1]);
+    if (Number.isFinite(page) && page > 0) pages.push(page);
+  }
+  return [...new Set(pages)];
+}
+
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'this', 'that', 'were', 'was', 'are', 'is', 'to', 'of', 'in',
+  'on', 'by', 'at', 'as', 'vs', 'per', 'more', 'than', 'without', 'across', 'zone', 'zones', 'page',
+]);
+
+function tokenize(text = '') {
+  return String(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t && t.length > 2 && !STOPWORDS.has(t));
+}
+
+function sourceRefAnchorText(sourceRefs = []) {
+  return sourceRefs
+    .map((ref) => {
+      const m = String(ref).match(/PAGE\s+\d+:\s*(.+)$/i);
+      return m ? m[1] : '';
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function overlapScore(queryTokens = [], candidateTokens = []) {
+  if (!queryTokens.length || !candidateTokens.length) return 0;
+  const q = new Set(queryTokens);
+  const c = new Set(candidateTokens);
+  let overlap = 0;
+  for (const t of q) {
+    if (c.has(t)) overlap += 1;
+  }
+  return overlap / Math.max(1, Math.min(q.size, c.size));
+}
+
+function overlapCount(queryTokens = [], candidateTokens = []) {
+  if (!queryTokens.length || !candidateTokens.length) return 0;
+  const q = new Set(queryTokens);
+  const c = new Set(candidateTokens);
+  let overlap = 0;
+  for (const t of q) {
+    if (c.has(t)) overlap += 1;
+  }
+  return overlap;
+}
+
+const CONCEPT_GROUPS = [
+  ['overdrill', 'overdrilling', 'overdrilled', 'underdrill', 'underdrilling', 'drill', 'drilling', 'depth', 'holes'],
+  ['water', 'wet', 'cluster', 'clustered', 'clusters'],
+  ['energy', 'kcal', 'cost', 'fragmentation', 'p80'],
+];
+
+function conceptBoost(queryTokens = [], candidateTokens = []) {
+  if (!queryTokens.length || !candidateTokens.length) return 0;
+  const q = new Set(queryTokens);
+  const c = new Set(candidateTokens);
+  let score = 0;
+  for (const group of CONCEPT_GROUPS) {
+    const qHit = group.some((t) => q.has(t));
+    if (!qHit) continue;
+    const matches = group.filter((t) => c.has(t)).length;
+    if (matches >= 2) score += 0.1;
+    else if (matches >= 1) score += 0.05;
+  }
+  return score;
+}
+
+function buildImageSelector(imageAssets) {
+  const images = Array.isArray(imageAssets?.images) ? imageAssets.images : [];
+  const perPage = new Map();
+  const all = [];
+  const used = new Set();
+
+  for (const img of images) {
+    const file = String(img?.file || '');
+    const page = Number(img?.page);
+    const widthPx = Number(img?.widthPx || 0);
+    const heightPx = Number(img?.heightPx || 0);
+    if (!file || !Number.isFinite(page) || page <= 0) continue;
+    if (!fs.existsSync(file)) continue;
+    const contextTokens = tokenize(`${img?.contextSnippet || ''} ${path.basename(file)}`);
+    const pageTokens = tokenize(`${img?.pageTextSnippet || ''}`);
+    const enriched = {
+      ...img,
+      page,
+      file,
+      area: widthPx * heightPx,
+      contextTokens,
+      pageTokens,
+    };
+    const bucket = perPage.get(page) || [];
+    bucket.push(enriched);
+    perPage.set(page, bucket);
+    all.push(enriched);
+  }
+
+  for (const bucket of perPage.values()) {
+    bucket.sort((a, b) => (b.area || 0) - (a.area || 0));
+  }
+
+  function rankBestCandidate(candidates, queryTokens, pages) {
+    let best = null;
+    let bestScore = -1;
+    let bestOverlap = 0;
+    let bestPageOverlap = 0;
+    let bestConceptBoost = 0;
+    for (const img of candidates) {
+      const directSemantic = overlapScore(queryTokens, img.contextTokens);
+      const overlap = overlapCount(queryTokens, img.contextTokens);
+      const pageSemantic = overlapScore(queryTokens, img.pageTokens);
+      const pageOverlap = overlapCount(queryTokens, img.pageTokens);
+      const pageBonus = pages.includes(img.page) ? 0.1 : 0;
+      const areaBonus = img.area > 0 ? Math.min(0.05, img.area / 15000000) : 0;
+      const overlapBonus = overlap >= 3 ? 0.16 : overlap >= 2 ? 0.1 : overlap >= 1 ? 0.04 : 0;
+      const pageOverlapBonus = pageOverlap >= 4 ? 0.07 : pageOverlap >= 2 ? 0.03 : 0;
+      const concept = conceptBoost(queryTokens, [...img.contextTokens, ...img.pageTokens]);
+      const noSemanticPenalty = overlap === 0 ? -0.12 : 0;
+      const score = (directSemantic * 1.0) + (pageSemantic * 0.35)
+        + pageBonus + areaBonus + overlapBonus + pageOverlapBonus + concept + noSemanticPenalty;
+      if (score > bestScore) {
+        bestScore = score;
+        bestOverlap = overlap;
+        bestPageOverlap = pageOverlap;
+        bestConceptBoost = concept;
+        best = img;
+      }
+    }
+    return {
+      best,
+      bestScore,
+      bestOverlap,
+      bestPageOverlap,
+      bestConceptBoost,
+    };
+  }
+
+  return function selectForSlide(slideModel) {
+    const pages = sourceRefPages(slideModel?.sourceRefs);
+    const queryText = [
+      slideModel?.title || '',
+      slideModel?.summary || '',
+      ...(Array.isArray(slideModel?.bullets) ? slideModel.bullets : []),
+      slideModel?.leftTitle || '',
+      ...(Array.isArray(slideModel?.leftBullets) ? slideModel.leftBullets : []),
+      slideModel?.rightTitle || '',
+      ...(Array.isArray(slideModel?.rightBullets) ? slideModel.rightBullets : []),
+      sourceRefAnchorText(slideModel?.sourceRefs || []),
+    ].join(' ');
+    const queryTokens = tokenize(queryText);
+
+    const pageCandidates = pages.flatMap((p) => perPage.get(p) || []).filter((img) => !used.has(img.file));
+    const fallbackCandidates = all.filter((img) => !used.has(img.file));
+    const candidates = pageCandidates.length ? pageCandidates : fallbackCandidates;
+    if (!candidates.length) return null;
+
+    const {
+      best,
+      bestScore,
+      bestOverlap,
+      bestPageOverlap,
+      bestConceptBoost,
+    } = rankBestCandidate(candidates, queryTokens, pages);
+    if (!best) return null;
+    // Guardrails by layout: two-column requires direct image semantics.
+    if (slideModel?.layout === 'two_column' && bestOverlap < 1 && !(bestPageOverlap >= 2 && bestConceptBoost >= 0.1)) return null;
+    // Chart-bar can use strong page-level evidence when direct text is unavailable.
+    if (slideModel?.layout === 'chart_bar' && bestOverlap < 1 && bestPageOverlap < 2 && bestConceptBoost < 0.08) return null;
+    if (bestScore < 0.16) return null;
+    used.add(best.file);
+    return best;
+  };
+}
+
+function addCardImage(slide, pres, image, {
+  x, y, w, h, frameStyle = 'cardAlt', drawFrame = true, pad = 0.08,
+}) {
+  const imagePath = image?.file;
+  const srcW = Number(image?.widthPx || 0);
+  const srcH = Number(image?.heightPx || 0);
+  if (!imagePath || !srcW || !srcH) return;
+
+  if (drawFrame) {
+    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+      x, y, w, h,
+      ...shapeStyle(frameStyle),
+    });
+  }
+
+  const boxX = x + pad;
+  const boxY = y + pad;
+  const boxW = w - (pad * 2);
+  const boxH = h - (pad * 2);
+
+  const srcRatio = srcW / srcH;
+  const boxRatio = boxW / boxH;
+  let drawW = boxW;
+  let drawH = boxH;
+  if (srcRatio > boxRatio) {
+    drawH = boxW / srcRatio;
+  } else {
+    drawW = boxH * srcRatio;
+  }
+
+  const drawX = boxX + ((boxW - drawW) / 2);
+  const drawY = boxY + ((boxH - drawH) / 2);
+  slide.addImage({ path: imagePath, x: drawX, y: drawY, w: drawW, h: drawH });
 }
 
 function hashText(value = '') {
@@ -144,9 +364,10 @@ function addSummaryBand(slide, pres, model) {
   });
 }
 
-function addTwoColumn(slide, pres, model, rightAlt = false) {
+function addTwoColumn(slide, pres, model, rightAlt = false, ctx = {}) {
   const leftBullets = listOrEmpty(model.leftBullets);
   const rightBullets = listOrEmpty(model.rightBullets);
+  const image = ctx.slideImage;
 
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
     x: sx(0.9), y: 1.95, w: 5.9, h: 4.85,
@@ -171,17 +392,23 @@ function addTwoColumn(slide, pres, model, rightAlt = false) {
     ...textStyle('cardHeading', { color: rightAlt ? FREEPORT_THEME.colors.brandBlue : FREEPORT_THEME.colors.ink }),
   });
   slide.addText(bulletRuns(rightBullets), {
-    x: sx(7.3), y: 2.95, w: 5.2, h: 3.6,
+    x: sx(7.3), y: 2.95, w: 5.2, h: image ? 1.5 : 3.6,
     ...textStyle('body'),
   });
+  if (image?.file) {
+    addCardImage(slide, pres, image, {
+      x: sx(7.22), y: 4.42, w: 5.45, h: 2.28,
+    });
+  }
 }
 
-function addTwoColumnStagger(slide, pres, model, rightAlt = false) {
+function addTwoColumnStagger(slide, pres, model, rightAlt = false, ctx = {}) {
   const leftList = listOrEmpty(model.leftBullets);
   const rightList = listOrEmpty(model.rightBullets);
   const bullets = listOrEmpty(model.bullets);
   const leftBullets = leftList.length ? leftList : bullets;
   const rightBullets = rightList.length ? rightList : bullets.slice(0, 4);
+  const image = ctx.slideImage;
 
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
     x: sx(0.9), y: 1.95, w: 5.9, h: 4.85,
@@ -206,8 +433,59 @@ function addTwoColumnStagger(slide, pres, model, rightAlt = false) {
     ...textStyle('cardHeading', { color: rightAlt ? FREEPORT_THEME.colors.brandBlue : FREEPORT_THEME.colors.ink }),
   });
   slide.addText(bulletRuns(rightBullets), {
-    x: sx(7.3), y: 2.95, w: 5.2, h: 3.6,
+    x: sx(7.3), y: 2.95, w: 5.2, h: image ? 1.5 : 3.6,
     ...textStyle('body'),
+  });
+  if (image?.file) {
+    addCardImage(slide, pres, image, {
+      x: sx(7.22), y: 4.42, w: 5.45, h: 2.28,
+    });
+  }
+}
+
+function addTwoColumnImage(slide, pres, model, ctx = {}) {
+  const image = ctx.slideImage;
+  const leftList = listOrEmpty(model.leftBullets);
+  const rightList = listOrEmpty(model.rightBullets);
+  const bullets = listOrEmpty(model.bullets);
+  const topBullets = leftList.length ? leftList : bullets.slice(0, 5);
+  const bottomBullets = rightList.length ? rightList : bullets.slice(5, 10);
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(0.51), y: 1.95, w: 6.1, h: 4.85,
+    ...shapeStyle('card'),
+  });
+  if (image?.file) {
+    addCardImage(slide, pres, image, {
+      x: sx(0.64), y: 2.18, w: 5.88, h: 4.4, drawFrame: false,
+    });
+  }
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(6.96), y: 1.95, w: 6.33, h: 2.25,
+    ...shapeStyle('cardAlt'),
+  });
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(6.96), y: 4.55, w: 6.33, h: 2.25,
+    ...shapeStyle('card'),
+  });
+
+  slide.addText(model.leftTitle || 'Context', {
+    x: sx(7.16), y: 2.23, w: 5.93, h: 0.38,
+    ...textStyle('cardHeading', { color: FREEPORT_THEME.colors.brandBlue }),
+  });
+  slide.addText(bulletRuns(topBullets), {
+    x: sx(7.16), y: 2.70, w: 5.93, h: 1.36,
+    ...textStyle('body', { fit: 'shrink' }),
+  });
+
+  slide.addText(model.rightTitle || 'Implications', {
+    x: sx(7.16), y: 4.83, w: 5.93, h: 0.38,
+    ...textStyle('cardHeading'),
+  });
+  slide.addText(bulletRuns(bottomBullets.length ? bottomBullets : topBullets), {
+    x: sx(7.16), y: 5.30, w: 5.93, h: 1.36,
+    ...textStyle('body', { fit: 'shrink' }),
   });
 }
 
@@ -465,6 +743,107 @@ function addChartBarFocus(slide, pres, model) {
   });
 }
 
+function addChartBarImage(slide, pres, model, ctx = {}) {
+  const image = ctx.slideImage;
+  const { chart, categories, series } = normalizeChartPayload(model);
+  const shownCats = categories.slice(0, 3);
+  const compactSeries = series.map((s) => ({
+    name: s.name,
+    labels: shownCats,
+    values: (s.values || []).slice(0, shownCats.length),
+  }));
+  const plannedColor = FREEPORT_THEME.chartDefaults.chartColors[0] || FREEPORT_THEME.colors.brandBlue;
+  const actualColor = FREEPORT_THEME.chartDefaults.chartColors[1] || '79D9FF';
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(0.42), y: 1.95, w: 6.95, h: 4.85,
+    ...shapeStyle('card'),
+  });
+  if (image?.file) {
+    addCardImage(slide, pres, image, {
+      x: sx(0.48), y: 2.01, w: 6.83, h: 4.73, drawFrame: false, pad: 0.03,
+    });
+  }
+
+  const chartCardX = sx(7.55);
+  const chartCardY = 1.95;
+  const chartCardW = 5.35;
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: chartCardX, y: chartCardY, w: chartCardW, h: 2.75,
+    ...shapeStyle('cardAlt'),
+  });
+  slide.addText(chart.title || 'Planned vs. Actual Blast Performance', {
+    x: sx(7.78), y: 2.15, w: 4.95, h: 0.35,
+    ...textStyle('label', { bold: true, color: FREEPORT_THEME.colors.brandBlue }),
+  });
+
+  const panelGap = 0.12;
+  const panelX = sx(7.78);
+  const panelY = 2.55;
+  const panelH = 1.72;
+  const panelW = (4.95 - (panelGap * (shownCats.length - 1))) / shownCats.length;
+  shownCats.forEach((label, idx) => {
+    const localSeries = compactSeries.map((s) => ({
+      name: s.name,
+      labels: [label],
+      values: [Number(s.values[idx]) || 0],
+    }));
+    slide.addChart(pres.charts.BAR, localSeries, {
+      x: panelX + (idx * (panelW + panelGap)), y: panelY, w: panelW, h: panelH,
+      ...chartStyle({
+        showLegend: false,
+        showTitle: false,
+        valAxisMinVal: 0,
+        dataLabelPosition: 'outEnd',
+        dataLabelFontSize: 9,
+      }),
+    });
+  });
+
+  const legendY = 4.33;
+  const swatchW = 0.11;
+  const plannedLabelW = 1.05;
+  const actualLabelW = 0.9;
+  const itemGap = 0.34;
+  const interGap = 0.42;
+  const legendGroupW = swatchW + itemGap + plannedLabelW + interGap + swatchW + itemGap + actualLabelW;
+  const legendStartX = chartCardX + ((chartCardW - legendGroupW) / 2);
+  const plannedSwatchX = legendStartX;
+  const plannedTextX = plannedSwatchX + itemGap;
+  const actualSwatchX = plannedTextX + plannedLabelW + interGap;
+  const actualTextX = actualSwatchX + itemGap;
+
+  slide.addShape(pres.shapes.RECTANGLE, {
+    x: plannedSwatchX, y: legendY, w: swatchW, h: swatchW,
+    fill: { color: plannedColor }, line: { color: plannedColor, pt: 0 },
+  });
+  slide.addText('Planned', {
+    x: plannedTextX, y: 4.29, w: plannedLabelW, h: 0.18,
+    ...textStyle('label', { fontSize: 10 }),
+  });
+  slide.addShape(pres.shapes.RECTANGLE, {
+    x: actualSwatchX, y: legendY, w: swatchW, h: swatchW,
+    fill: { color: actualColor }, line: { color: actualColor, pt: 0 },
+  });
+  slide.addText('Actual', {
+    x: actualTextX, y: 4.29, w: actualLabelW, h: 0.18,
+    ...textStyle('label', { fontSize: 10 }),
+  });
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(7.55), y: 4.9, w: 5.35, h: 1.9,
+    ...shapeStyle('card'),
+  });
+  slide.addText('Key Takeaways', {
+    x: sx(7.78), y: 5.08, w: 4.95, h: 0.3,
+    ...textStyle('cardHeading'),
+  });
+  slide.addText(bulletRuns(listOrEmpty(model.bullets).slice(0, 4)), {
+    x: sx(7.78), y: 5.54, w: 4.95, h: 1.08,
+    ...textStyle('body', { fontSize: 12, fit: 'shrink' }),
+  });
+}
+
 function addActionChecklist(slide, pres, model) {
   const rightList = listOrEmpty(model.rightBullets);
   const leftList = listOrEmpty(model.leftBullets);
@@ -473,29 +852,29 @@ function addActionChecklist(slide, pres, model) {
   const reasons = leftList.length ? leftList : bullets;
 
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: sx(0.9), y: 1.95, w: 4.0, h: 4.85,
+    x: sx(0.9), y: 1.95, w: 4.6, h: 4.85,
     ...shapeStyle('cardAlt'),
   });
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: sx(5.2), y: 1.95, w: 7.7, h: 4.85,
+    x: sx(5.8), y: 1.95, w: 7.1, h: 4.85,
     ...shapeStyle('card'),
   });
 
   slide.addText(model.leftTitle || 'Why Now', {
-    x: sx(1.2), y: 2.3, w: 3.4, h: 0.45,
+    x: sx(1.2), y: 2.3, w: 4.0, h: 0.45,
     ...textStyle('cardHeading', { color: FREEPORT_THEME.colors.brandBlue }),
   });
   slide.addText(bulletRuns(reasons.slice(0, 4)), {
-    x: sx(1.2), y: 2.85, w: 3.4, h: 3.7,
+    x: sx(1.2), y: 2.85, w: 4.0, h: 3.7,
     ...textStyle('body'),
   });
 
   slide.addText(model.rightTitle || 'Action Plan', {
-    x: sx(5.5), y: 2.3, w: 7.1, h: 0.45,
-    ...textStyle('cardHeading'),
+    x: sx(6.1), y: 2.3, w: 6.5, h: 0.45,
+    ...textStyle('cardHeading', { fontSize: 18 }),
   });
   slide.addText(actions.slice(0, 5).map((text, idx) => `${idx + 1}. ${text}`).join('\n'), {
-    x: sx(5.5), y: 2.85, w: 7.1, h: 3.75,
+    x: sx(6.1), y: 2.85, w: 6.5, h: 3.75,
     ...textStyle('body'),
   });
 }
@@ -503,18 +882,22 @@ function addActionChecklist(slide, pres, model) {
 const LAYOUT_RENDERERS = {
   summary_card: addSummaryCard,
   summary_band: addSummaryBand,
-  two_column: (slide, pres, model) => addTwoColumn(slide, pres, model, false),
-  two_column_stagger: (slide, pres, model) => addTwoColumnStagger(slide, pres, model, false),
-  action_split: (slide, pres, model) => addTwoColumn(slide, pres, model, true),
+  two_column: (slide, pres, model, ctx) => addTwoColumn(slide, pres, model, false, ctx),
+  two_column_stagger: (slide, pres, model, ctx) => addTwoColumnStagger(slide, pres, model, false, ctx),
+  two_column_image: addTwoColumnImage,
+  action_split: (slide, pres, model, ctx) => addTwoColumn(slide, pres, model, true, ctx),
   action_checklist: addActionChecklist,
   metrics: addMetrics,
   metrics_strip: addMetricsStrip,
   chart_bar: addChartBar,
   chart_bar_focus: addChartBarFocus,
+  chart_bar_image: addChartBarImage,
 };
 
-async function renderPlanToFreeportDeck({ plan, outputPath }) {
+async function renderPlanToFreeportDeck({ plan, outputPath, imageAssets = null }) {
   const pres = createFreeportPresentation();
+  const selectImageForSlide = buildImageSelector(imageAssets);
+  const IMAGE_CAPABLE_LAYOUTS = new Set(['two_column', 'chart_bar']);
 
   addTitleSlide(pres, {
     title: plan.deckTitle || 'Narrative Deck',
@@ -525,9 +908,14 @@ async function renderPlanToFreeportDeck({ plan, outputPath }) {
   for (let i = 0; i < plan.slides.length; i += 1) {
     const slideModel = plan.slides[i];
     const slide = addContentSlide(pres, { title: slideModel.title || 'Untitled' });
-    const variantKey = chooseVariant(slideModel.layout, slideModel, i, previousVariantKey);
+    const slideImage = IMAGE_CAPABLE_LAYOUTS.has(slideModel.layout)
+      ? selectImageForSlide(slideModel)
+      : null;
+    let variantKey = chooseVariant(slideModel.layout, slideModel, i, previousVariantKey);
+    if (slideModel.layout === 'two_column' && slideImage?.file) variantKey = 'two_column_image';
+    if (slideModel.layout === 'chart_bar' && slideImage?.file) variantKey = 'chart_bar_image';
     const renderer = LAYOUT_RENDERERS[variantKey] || LAYOUT_RENDERERS.summary_card;
-    renderer(slide, pres, slideModel);
+    renderer(slide, pres, slideModel, { slideImage });
     previousVariantKey = variantKey;
   }
 

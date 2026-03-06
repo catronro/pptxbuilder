@@ -30,14 +30,16 @@ function parseArgs(argv) {
     if (token === '--input') args.input = next, i += 1;
     else if (token === '--output') args.output = next, i += 1;
     else if (token === '--plan-file') args.planFile = next, i += 1;
+    else if (token === '--image-manifest') args.imageManifest = next, i += 1;
     else if (token === '--max-slides') args.maxSlides = Number(next || 7), i += 1;
   }
   return args;
 }
 
-async function extractInputText(inputPath) {
+async function extractInputText(inputPath, assetsOutDir) {
   const scriptPath = path.join(__dirname, '..', 'scripts', 'extract_input_text.py');
-  const { stdout, stderr } = await execFileAsync('python3', [scriptPath, inputPath]);
+  const args = assetsOutDir ? [scriptPath, inputPath, assetsOutDir] : [scriptPath, inputPath];
+  const { stdout, stderr } = await execFileAsync('python3', args);
   if (stderr && stderr.trim()) {
     throw new Error(stderr.trim());
   }
@@ -89,15 +91,21 @@ async function main() {
 
   let plan;
   let planOut;
+  let imageAssets = null;
   if (args.planFile) {
     const raw = await fs.readFile(path.resolve(args.planFile), 'utf8');
     plan = normalizePlan(JSON.parse(raw), Number.isFinite(args.maxSlides) ? args.maxSlides : 7);
     validatePlan(plan);
+    if (args.imageManifest) {
+      const manifestRaw = await fs.readFile(path.resolve(args.imageManifest), 'utf8');
+      imageAssets = JSON.parse(manifestRaw);
+    }
     planOut = outPath.replace(/\.pptx$/i, '.plan.json');
     await fs.writeFile(planOut, JSON.stringify(plan, null, 2));
     console.log(`Plan written: ${planOut}`);
   } else {
-    const extracted = await extractInputText(path.resolve(args.input));
+    const assetsOutDir = outPath.replace(/\.pptx$/i, '.assets');
+    const extracted = await extractInputText(path.resolve(args.input), assetsOutDir);
     const skillPath = path.join(__dirname, '..', 'behavior', 'freeport-slide-storytelling-skill.md');
 
     plan = await planSlidesFromText({
@@ -107,12 +115,19 @@ async function main() {
       maxSlides: Number.isFinite(args.maxSlides) ? args.maxSlides : 7,
     });
 
+    if (extracted.imageAssets) {
+      imageAssets = extracted.imageAssets;
+      const imageManifestOut = outPath.replace(/\.pptx$/i, '.image-manifest.json');
+      await fs.writeFile(imageManifestOut, JSON.stringify(extracted.imageAssets, null, 2));
+      console.log(`Image manifest written: ${imageManifestOut}`);
+    }
+
     planOut = outPath.replace(/\.pptx$/i, '.plan.json');
     await fs.writeFile(planOut, JSON.stringify(plan, null, 2));
     console.log(`Plan written: ${planOut}`);
   }
 
-  const written = await renderPlanToFreeportDeck({ plan, outputPath: outPath });
+  const written = await renderPlanToFreeportDeck({ plan, outputPath: outPath, imageAssets });
   await runPostRenderQa({ deckPath: written, planPath: planOut });
   console.log(`Deck written: ${written}`);
 }
