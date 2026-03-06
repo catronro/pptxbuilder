@@ -1,0 +1,123 @@
+{
+  "deckTitle": "Operations Narrative",
+  "deckSubtitle": "Validation Fixture",
+  "mainAnswer": "Fragmentation missed target due to execution variance and requires corrective controls.",
+  "supportingArguments": [
+    { "id": "A1", "claim": "Drilling execution variance drove fragmentation loss." },
+    { "id": "A2", "claim": "Energy and water conditions amplified inconsistency." },
+    { "id": "A3", "claim": "Downstream efficiency likely declined due to coarse feed." }
+  ],
+  "slides": [
+    {
+      "layout": "summary_card",
+      "pyramidRole": "executive_summary",
+      "supportsArgument": "ALL",
+      "title": "Fragmentation missed target due to drilling execution variance.",
+      "summary": "Headline summary of pattern performance and primary driver.",
+      "sourceRefs": ["PAGE 1: actual P80 17.7 inches"],
+      "bullets": [
+        "Actual P80 was above optimal target.",
+        "Vertical accuracy was the largest modeled driver.",
+        "Overdrilling concentration was operationally significant.",
+        "Cost remained near planned baseline."
+      ],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": null
+    },
+    {
+      "layout": "metrics",
+      "pyramidRole": "supporting_logic",
+      "supportsArgument": "A1",
+      "title": "Execution KPIs show depth-control variance across the pattern.",
+      "summary": "",
+      "sourceRefs": ["PAGE 3: overdrilling 71.4 percent"],
+      "bullets": [],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [
+        { "label": "Vertical Accuracy", "value": "85.7%", "note": "Primary backcast driver" },
+        { "label": "Overdrilled Holes", "value": "71.4%", "note": "More than 2 ft" },
+        { "label": "Drilled/Planned", "value": "87/113", "note": "26 not drilled" }
+      ],
+      "chart": null
+    },
+    {
+      "layout": "chart_bar",
+      "pyramidRole": "evidence",
+      "supportsArgument": "A2",
+      "title": "Planned and actual energy diverged while cost remained near plan.",
+      "summary": "",
+      "sourceRefs": ["PAGE 3: 335.6 vs 317.5 kcal/ton"],
+      "bullets": [
+        "Actual energy exceeded planned energy.",
+        "Actual cost remained close to planned cost.",
+        "Water and plugging created localized risk."
+      ],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": {
+        "title": "Planned vs Actual",
+        "categories": ["kcal/ton", "Cost"],
+        "series": [
+          { "name": "Planned", "values": [317.5, 0.53] },
+          { "name": "Actual", "values": [335.6, 0.52] }
+        ]
+      }
+    },
+    {
+      "layout": "two_column",
+      "pyramidRole": "evidence",
+      "supportsArgument": "A3",
+      "title": "Coarser fragmentation likely reduced dig and crusher efficiency downstream.",
+      "summary": "",
+      "sourceRefs": ["PAGE 1: reduced dig efficiency and crusher throughput"],
+      "bullets": [],
+      "leftTitle": "Likely Effects",
+      "leftBullets": [
+        "Dig efficiency likely declined.",
+        "Crusher throughput likely declined.",
+        "Material breakage became uneven."
+      ],
+      "rightTitle": "Contributing Factors",
+      "rightBullets": [
+        "P80 was materially above optimal.",
+        "Overdrill and underdrill pockets persisted.",
+        "Water cluster altered local energy distribution."
+      ],
+      "metrics": [],
+      "chart": null
+    },
+    {
+      "layout": "action_split",
+      "pyramidRole": "implication",
+      "supportsArgument": "A3",
+      "title": "Depth-control improvements are required to close the fragmentation gap.",
+      "summary": "",
+      "sourceRefs": ["PAGE 2: vertical accuracy greatest impact"],
+      "bullets": [],
+      "leftTitle": "Risks",
+      "leftBullets": [
+        "Throughput pressure continues.",
+        "Cost volatility persists.",
+        "Quality variance repeats."
+      ],
+      "rightTitle": "Actions",
+      "rightBullets": [
+        "Tighten vertical depth controls.",
+        "Contain overdrilling clusters quickly.",
+        "Standardize wet-hole loading strategy."
+      ],
+      "metrics": [],
+      "chart": null
+    }
+  ]
+}

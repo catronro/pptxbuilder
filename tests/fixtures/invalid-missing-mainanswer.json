@@ -1,0 +1,80 @@
+{
+  "deckTitle": "Invalid Fixture",
+  "deckSubtitle": "Missing main answer",
+  "mainAnswer": "",
+  "supportingArguments": [
+    { "id": "A1", "claim": "Some claim." },
+    { "id": "A2", "claim": "Another claim." }
+  ],
+  "slides": [
+    {
+      "layout": "summary_card",
+      "pyramidRole": "executive_summary",
+      "supportsArgument": "ALL",
+      "title": "This is a valid-looking title.",
+      "summary": "",
+      "sourceRefs": ["PAGE 1: anchor"],
+      "bullets": ["one", "two", "three", "four"],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": null
+    },
+    {
+      "layout": "metrics",
+      "pyramidRole": "supporting_logic",
+      "supportsArgument": "A1",
+      "title": "This is also a valid-looking title.",
+      "summary": "",
+      "sourceRefs": ["PAGE 1: anchor"],
+      "bullets": [],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [
+        { "label": "x", "value": "1", "note": "n" }
+      ],
+      "chart": null
+    },
+    {
+      "layout": "chart_bar",
+      "pyramidRole": "evidence",
+      "supportsArgument": "A2",
+      "title": "Planned and actual values are shown here.",
+      "summary": "",
+      "sourceRefs": ["PAGE 2: anchor"],
+      "bullets": ["a", "b", "c"],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": {
+        "title": "t",
+        "categories": ["a", "b"],
+        "series": [
+          { "name": "planned", "values": [1, 2] },
+          { "name": "actual", "values": [2, 3] }
+        ]
+      }
+    },
+    {
+      "layout": "action_split",
+      "pyramidRole": "implication",
+      "supportsArgument": "A2",
+      "title": "Final implication is expressed here.",
+      "summary": "",
+      "sourceRefs": ["PAGE 2: anchor"],
+      "bullets": [],
+      "leftTitle": "L",
+      "leftBullets": ["a", "b", "c"],
+      "rightTitle": "R",
+      "rightBullets": ["a", "b", "c"],
+      "metrics": [],
+      "chart": null
+    }
+  ]
+}

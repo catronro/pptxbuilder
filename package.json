@@ -1,0 +1,19 @@
+{
+  "name": "v2presbuild",
+  "version": "1.0.0",
+  "description": "",
+  "main": "pipeline/generate-freeport-deck.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "generate:freeport": "node pipeline/generate-freeport-deck.js",
+    "test:validator": "node scripts/test-validator.js",
+    "docs:generate": "node docs/generate-docs.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "pptxgenjs": "^4.0.1"
+  }
+}

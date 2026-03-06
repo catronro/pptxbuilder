@@ -1,0 +1,97 @@
+{
+  "deckTitle": "Invalid Numeric Consistency",
+  "deckSubtitle": "Conflicting metric values",
+  "mainAnswer": "Execution variance degraded fragmentation performance.",
+  "supportingArguments": [
+    { "id": "A1", "claim": "Drilling variance was material." },
+    { "id": "A2", "claim": "Downstream impact was likely negative." }
+  ],
+  "slides": [
+    {
+      "layout": "summary_card",
+      "pyramidRole": "executive_summary",
+      "supportsArgument": "ALL",
+      "title": "Fragmentation performance missed target due to drilling variance.",
+      "summary": "",
+      "sourceRefs": ["PAGE 1: p80 summary"],
+      "bullets": ["One.", "Two.", "Three.", "Four."],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": null
+    },
+    {
+      "layout": "metrics",
+      "pyramidRole": "supporting_logic",
+      "supportsArgument": "A1",
+      "title": "Execution metrics indicate significant depth-control variance.",
+      "summary": "",
+      "sourceRefs": ["PAGE 3: overdrilling"],
+      "bullets": [],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [
+        { "label": "Vertical Accuracy", "value": "85.7%", "note": "backcast" }
+      ],
+      "chart": null
+    },
+    {
+      "layout": "chart_bar",
+      "pyramidRole": "evidence",
+      "supportsArgument": "A1",
+      "title": "Planned and actual comparisons confirm execution gaps.",
+      "summary": "",
+      "sourceRefs": ["PAGE 3: planned vs actual"],
+      "bullets": ["A.", "B.", "C."],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [],
+      "chart": {
+        "title": "P vs A",
+        "categories": ["kcal/ton", "cost"],
+        "series": [
+          { "name": "planned", "values": [317.5, 0.53] },
+          { "name": "actual", "values": [335.6, 0.52] }
+        ]
+      }
+    },
+    {
+      "layout": "metrics",
+      "pyramidRole": "evidence",
+      "supportsArgument": "A2",
+      "title": "Secondary metrics confirm probable downstream drag.",
+      "summary": "",
+      "sourceRefs": ["PAGE 1: downstream impact"],
+      "bullets": [],
+      "leftTitle": "",
+      "leftBullets": [],
+      "rightTitle": "",
+      "rightBullets": [],
+      "metrics": [
+        { "label": "Vertical Accuracy", "value": "92.1%", "note": "contradiction fixture" }
+      ],
+      "chart": null
+    },
+    {
+      "layout": "action_split",
+      "pyramidRole": "implication",
+      "supportsArgument": "A2",
+      "title": "Control improvements are required to prevent repeat performance loss.",
+      "summary": "",
+      "sourceRefs": ["PAGE 2: actions"],
+      "bullets": [],
+      "leftTitle": "Risks",
+      "leftBullets": ["A.", "B.", "C."],
+      "rightTitle": "Actions",
+      "rightBullets": ["A.", "B.", "C."],
+      "metrics": [],
+      "chart": null
+    }
+  ]
+}
