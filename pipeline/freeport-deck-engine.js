@@ -398,7 +398,35 @@ function normalizeChartPayload(model) {
   if (!series.length) {
     series.push({ name: 'Series 1', labels: categories, values: categories.map(() => 0) });
   }
-  return { chart, categories, series };
+
+  const normalizedCategories = [...categories];
+  const normalizedSeries = series.map((s) => ({ ...s, values: [...s.values] }));
+
+  // Normalize legacy "×100" currency categories so charted values render as
+  // true $/ton decimals (e.g., 53 -> 0.53) instead of inflated integers.
+  normalizedCategories.forEach((label, idx) => {
+    const raw = String(label || '');
+    const hasTimes100 = /(?:×|x)\s*100/i.test(raw);
+    if (!hasTimes100) return;
+
+    const maxAbs = Math.max(
+      ...normalizedSeries.map((s) => Math.abs(Number(s.values[idx]) || 0)),
+      0,
+    );
+    if (maxAbs >= 10) {
+      normalizedSeries.forEach((s) => {
+        s.values[idx] = Number(((Number(s.values[idx]) || 0) / 100).toFixed(4));
+      });
+    }
+
+    normalizedCategories[idx] = raw
+      .replace(/\s*(?:×|x)\s*100\s*/ig, ' ')
+      .replace(/\s+\)/g, ')')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  });
+
+  return { chart, categories: normalizedCategories, series: normalizedSeries };
 }
 
 function shouldSplitKpiCharts(categories, series) {
@@ -422,6 +450,30 @@ function shouldSplitKpiCharts(categories, series) {
   const maxVal = Math.max(...nonZero);
   const minVal = Math.min(...nonZero);
   return (maxVal / minVal) >= 8;
+}
+
+function normalizeKpiPanelLabel(label) {
+  const raw = String(label || '').trim();
+  if (!raw) return 'Metric';
+
+  const compact = raw.replace(/\s+/g, ' ');
+  if (compact.includes('\n')) return compact;
+
+  // Force KPI labels into a consistent two-line shape so each mini-chart keeps
+  // comparable vertical plot area regardless of unit text length.
+  const unitMatch = compact.match(/^(.*?)(\s*\([^)]+\))$/);
+  if (unitMatch) {
+    const name = unitMatch[1].trim();
+    const units = unitMatch[2].trim();
+    return `${name}\n${units}`;
+  }
+
+  const splitIdx = compact.lastIndexOf(' ');
+  if (splitIdx > 0) {
+    return `${compact.slice(0, splitIdx)}\n${compact.slice(splitIdx + 1)}`;
+  }
+
+  return `${compact}\n `;
 }
 
 function addSplitKpiCharts(slide, pres, { chart, categories, series, bullets }) {
@@ -459,10 +511,11 @@ function addSplitKpiCharts(slide, pres, { chart, categories, series, bullets }) 
   });
 
   shown.forEach((label, idx) => {
+    const displayLabel = normalizeKpiPanelLabel(label);
     const panelX = baseX + idx * (panelW + gap);
     const localSeries = series.map((s) => ({
       name: s.name,
-      labels: [label],
+      labels: [displayLabel],
       values: [Number(s.values[idx]) || 0],
     }));
 
@@ -599,9 +652,10 @@ function addChartBarImage(slide, pres, model, ctx = {}) {
   const panelH = 1.72;
   const panelW = (4.95 - (panelGap * (shownCats.length - 1))) / shownCats.length;
   shownCats.forEach((label, idx) => {
+    const displayLabel = normalizeKpiPanelLabel(label);
     const localSeries = compactSeries.map((s) => ({
       name: s.name,
-      labels: [label],
+      labels: [displayLabel],
       values: [Number(s.values[idx]) || 0],
     }));
     slide.addChart(pres.charts.BAR, localSeries, {

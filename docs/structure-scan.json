@@ -1,0 +1,197 @@
+{
+  "scannedAt": "2026-03-07T03:46:22.521Z",
+  "root": "/Users/catronro/Documents/Codex/v2PresBuild",
+  "files": {
+    "pipeline": [
+      "pipeline/freeport-deck-engine.js",
+      "pipeline/generate-freeport-deck.js",
+      "pipeline/image-matcher.js",
+      "pipeline/llm-slide-planner.js",
+      "pipeline/load-env.js"
+    ],
+    "scripts": [
+      "scripts/extract_input_text.py",
+      "scripts/pdf_image_extractor.py",
+      "scripts/qa_rendered_deck.py",
+      "scripts/test-validator.js"
+    ],
+    "behavior": [
+      "behavior/freeport-slide-storytelling-skill.md",
+      "behavior/freeport-slide-styleguide.js"
+    ],
+    "testFixtures": [
+      "tests/fixtures/invalid-conflicting-metric-values.json",
+      "tests/fixtures/invalid-missing-mainanswer.json",
+      "tests/fixtures/valid-minimal-plan.json"
+    ]
+  },
+  "keyFiles": {
+    "generate": "pipeline/generate-freeport-deck.js",
+    "loadEnv": "pipeline/load-env.js",
+    "planner": "pipeline/llm-slide-planner.js",
+    "engine": "pipeline/freeport-deck-engine.js",
+    "styleguide": "behavior/freeport-slide-styleguide.js",
+    "storytelling": "behavior/freeport-slide-storytelling-skill.md",
+    "qaScript": "scripts/qa_rendered_deck.py",
+    "extractScript": "scripts/extract_input_text.py",
+    "validatorScript": "scripts/test-validator.js"
+  },
+  "modes": {
+    "input": true,
+    "planFile": true
+  },
+  "llm": {
+    "provider": "Anthropic",
+    "endpoint": "DEFAULT_BASE_URL/messages",
+    "envVars": [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_BASE_URL",
+      "ANTHROPIC_MODEL",
+      "ANTHROPIC_VERSION"
+    ],
+    "callFunction": "requestAnthropicJson",
+    "orchestratorFunction": "planSlidesFromText"
+  },
+  "dependencies": {
+    "pythonScriptsFromGenerate": [
+      "scripts/extract_input_text.py",
+      "scripts/qa_rendered_deck.py"
+    ],
+    "behaviorInputsFromGenerate": [
+      "behavior/freeport-slide-storytelling-skill.md"
+    ],
+    "styleguideInEngine": "behavior/freeport-slide-styleguide.js",
+    "imageManifestFlag": true,
+    "imageAssetsPipeline": true,
+    "imageMatcherInEngine": true,
+    "validatorFixtures": [
+      "tests/fixtures/invalid-conflicting-metric-values.json",
+      "tests/fixtures/invalid-missing-mainanswer.json",
+      "tests/fixtures/valid-minimal-plan.json"
+    ]
+  },
+  "qualityGates": {
+    "preRenderValidation": true,
+    "postRenderQa": true,
+    "plannerRetry": true
+  },
+  "components": [
+    {
+      "file": "pipeline/generate-freeport-deck.js",
+      "functions": [
+        "parseArgs",
+        "extractInputText",
+        "runPostRenderQa",
+        "main"
+      ],
+      "exports": [],
+      "requires": [
+        "node:fs/promises",
+        "node:path",
+        "node:child_process",
+        "node:util",
+        "./load-env",
+        "./llm-slide-planner",
+        "./freeport-deck-engine"
+      ],
+      "cliFlags": [
+        "--input",
+        "--output",
+        "--plan-file",
+        "--image-manifest",
+        "--max-slides"
+      ],
+      "pythonScripts": [
+        "scripts/extract_input_text.py",
+        "scripts/qa_rendered_deck.py"
+      ],
+      "behaviorFiles": [
+        "behavior/freeport-slide-storytelling-skill.md"
+      ]
+    },
+    {
+      "file": "pipeline/load-env.js",
+      "functions": [
+        "loadDotEnv"
+      ],
+      "exports": [
+        "loadDotEnv"
+      ],
+      "requires": [
+        "node:fs",
+        "node:path"
+      ],
+      "envVars": []
+    },
+    {
+      "file": "pipeline/llm-slide-planner.js",
+      "functions": [
+        "ensureApiKey",
+        "safeJsonParse",
+        "requestAnthropicJson",
+        "normalizePlan",
+        "trimToWordBoundary",
+        "dropDanglingEnding",
+        "normalizeSlideTitle",
+        "validatePlan",
+        "planSlidesFromText"
+      ],
+      "exports": [
+        "planSlidesFromText",
+        "normalizePlan",
+        "validatePlan"
+      ],
+      "requires": [
+        "node:fs/promises"
+      ],
+      "envVars": [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_BASE_URL",
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_VERSION"
+      ],
+      "fetchEndpoint": "DEFAULT_BASE_URL/messages",
+      "hasRetryLoop": true
+    },
+    {
+      "file": "pipeline/freeport-deck-engine.js",
+      "functions": [
+        "sx",
+        "joinedBullets",
+        "bulletRuns",
+        "splitBullets",
+        "listOrEmpty",
+        "addCardImage",
+        "hashText",
+        "chooseVariant",
+        "addSummaryCard",
+        "addSummaryBand",
+        "addTwoColumn",
+        "addTwoColumnStagger",
+        "addTwoColumnImage",
+        "addMetrics",
+        "addMetricsStrip",
+        "normalizeChartPayload",
+        "shouldSplitKpiCharts",
+        "addSplitKpiCharts",
+        "addChartBar",
+        "addChartBarFocus",
+        "addChartBarImage",
+        "addActionChecklist",
+        "renderPlanToFreeportDeck"
+      ],
+      "exports": [
+        "renderPlanToFreeportDeck"
+      ],
+      "requires": [
+        "node:path",
+        "../behavior/freeport-slide-styleguide",
+        "./image-matcher"
+      ]
+    },
+    {
+      "file": "docs/generate-docs.js",
+      "usesMermaidCli": true
+    }
+  ]
+}

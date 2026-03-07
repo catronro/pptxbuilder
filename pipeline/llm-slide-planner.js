@@ -129,11 +129,10 @@ function normalizePlan(plan, maxSlides) {
     title = dropDanglingEnding(title);
 
     title = title.replace(/[,;:\-–—]\s*$/, '').trim();
-    if (!/[.!?]$/.test(title)) title += '.';
-    if (title.length > MAX_TITLE_CHARS || /\b(a|an|the)\.$/i.test(title)) {
+    title = title.replace(/\.\s*$/, '').trim();
+    if (title.length > MAX_TITLE_CHARS || /\b(a|an|the)[.!?]?$/i.test(title)) {
       title = trimToWordBoundary(title.replace(/[.!?]$/, ''), MAX_TITLE_CHARS).trim();
       title = dropDanglingEnding(title);
-      if (!/[.!?]$/.test(title)) title += '.';
     }
     return title;
   }
@@ -260,7 +259,6 @@ function validatePlan(plan) {
       const chars = s.title.length;
       if (words > MAX_TITLE_WORDS) issues.push(`Slide ${n}: title exceeds ${MAX_TITLE_WORDS} words.`);
       if (chars > MAX_TITLE_CHARS) issues.push(`Slide ${n}: title exceeds ${MAX_TITLE_CHARS} characters.`);
-      if (!/[.!?]$/.test(s.title.trim())) issues.push(`Slide ${n}: title must end with sentence punctuation.`);
     }
     if (!Array.isArray(s.sourceRefs) || s.sourceRefs.length < 1 || s.sourceRefs.length > 3) {
       issues.push(`Slide ${n}: sourceRefs must contain 1-3 entries.`);
@@ -277,6 +275,13 @@ function validatePlan(plan) {
       const seriesCount = Array.isArray(c.series) ? c.series.length : 0;
       if (categoryCount < 2 || seriesCount < 2) {
         issues.push(`Slide ${n}: chart_bar requires >=2 categories and >=2 series.`);
+      }
+      if (Array.isArray(c.categories)) {
+        for (const cat of c.categories) {
+          if (/(?:×|x)\s*100/i.test(String(cat || ''))) {
+            issues.push(`Slide ${n}: chart category "${cat}" uses scaled units (x100), which is not allowed.`);
+          }
+        }
       }
     }
 

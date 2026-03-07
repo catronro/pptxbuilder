@@ -1,7 +1,8 @@
 # Solution Flow Diagram
 
-Generated: 2026-03-07T01:39:12.603Z
+Generated: 2026-03-07T03:46:22.521Z
 
 ![Solution flow](./solution-flow.png)
 
-Mermaid source lives in `docs/solution-flow.mmd`.
+- Diagram source: `docs/solution-flow.mmd`
+- Scan source: `docs/structure-scan.json`

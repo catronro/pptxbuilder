@@ -12,6 +12,7 @@ Use this as the governing instruction for LLM slide planning before any deck ren
 - Preserve key numeric values exactly when present.
 - Any numeric claim must map to source text evidence.
 - Do not convert precise values into rounded claims unless both are shown.
+- Never rescale chart values or units (for example, do not convert `$0.53` into `53` or label categories with `×100`).
 - If source quality is low or ambiguous, state uncertainty explicitly.
 - Remove operational noise (logs, UI chrome, stack traces, repeated footer/page labels).
 - Each slide must include 1-3 `sourceRefs`, formatted as: `PAGE N: short anchor phrase`.
