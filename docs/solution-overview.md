@@ -1,6 +1,6 @@
 # Solution Overview (New Developer Guide)
 
-Generated: 2026-03-06T18:58:07.661Z
+Generated: 2026-03-07T01:39:12.605Z
 
 ## What This Solution Does
 This project builds a Freeport-branded PowerPoint deck from either raw source content (`--input`) or a prebuilt slide plan (`--plan-file`).
@@ -40,6 +40,7 @@ This function is invoked by `planSlidesFromText()`.
 - `docs/solution-flow.mmd`: Mermaid source for the architecture flow.
 - `docs/solution-flow.png`: Rendered flow diagram.
 - `docs/solution-flow.md`: Lightweight page that displays the PNG.
+- `docs/environment-setup.md`: Fresh environment setup instructions.
 - `docs/solution-overview.md`: This narrative guide.
 
 ## How To Regenerate This Documentation

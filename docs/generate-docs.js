@@ -18,6 +18,7 @@ const FLOW_MMD_PATH = path.join(DOCS_DIR, 'solution-flow.mmd');
 const FLOW_PNG_PATH = path.join(DOCS_DIR, 'solution-flow.png');
 const OVERVIEW_MD_PATH = path.join(DOCS_DIR, 'solution-overview.md');
 const FLOW_MD_PATH = path.join(DOCS_DIR, 'solution-flow.md');
+const ENV_SETUP_MD_PATH = path.join(DOCS_DIR, 'environment-setup.md');
 
 function nowIso() {
   return new Date().toISOString();
@@ -117,6 +118,7 @@ function buildOverviewMarkdown() {
     '- `docs/solution-flow.mmd`: Mermaid source for the architecture flow.',
     '- `docs/solution-flow.png`: Rendered flow diagram.',
     '- `docs/solution-flow.md`: Lightweight page that displays the PNG.',
+    '- `docs/environment-setup.md`: Fresh environment setup instructions.',
     '- `docs/solution-overview.md`: This narrative guide.',
     '',
     '## How To Regenerate This Documentation',
@@ -125,6 +127,72 @@ function buildOverviewMarkdown() {
     '```bash',
     'npm run docs:generate',
     '```',
+    '',
+  ].join('\n');
+}
+
+function buildEnvironmentSetupMarkdown() {
+  return [
+    '# Environment Setup (New Machine)',
+    '',
+    `Generated: ${nowIso()}`,
+    '',
+    '## 1. Prerequisites',
+    '- Node.js 20+ and npm',
+    '- Python 3.10+ with `pip`',
+    '- LibreOffice (`soffice`) available on PATH (required for post-render QA)',
+    '- Git',
+    '',
+    '## 2. Clone and Install',
+    '```bash',
+    'git clone <your-repo-url>',
+    'cd v2PresBuild',
+    'npm install',
+    'python3 -m pip install --upgrade pypdf pymupdf',
+    '```',
+    '',
+    '## 3. Configure Environment Variables',
+    'Create `.env` in the project root:',
+    '',
+    '```bash',
+    'cp .env.example .env',
+    '```',
+    '',
+    'Then edit `.env` and set:',
+    '- `ANTHROPIC_API_KEY` to a valid key',
+    '- Optional: `ANTHROPIC_MODEL` (defaults to `claude-opus-4-6`)',
+    '- Optional: `ANTHROPIC_BASE_URL` / `ANTHROPIC_VERSION`',
+    '',
+    '## 4. Verify Basic Health',
+    '```bash',
+    'node -v',
+    'python3 --version',
+    'soffice --version',
+    'npm run test:validator',
+    'npm run docs:generate',
+    '```',
+    '',
+    '## 5. Run the Pipeline',
+    'Input mode (source file to full deck):',
+    '```bash',
+    'npm run generate:freeport -- --input <path-to-pdf-or-text> --output output/my-deck.pptx',
+    '```',
+    '',
+    'Plan mode (existing plan JSON to deck):',
+    '```bash',
+    'npm run generate:freeport -- --plan-file <path-to-plan.json> --output output/my-deck.pptx',
+    '```',
+    '',
+    '## 6. Expected Artifacts',
+    '- `output/*.plan.json` (validated plan)',
+    '- `output/*.pptx` (rendered deck)',
+    '- `output/*.pdf` (QA conversion artifact)',
+    '',
+    '## Troubleshooting',
+    '- Missing API key: set `ANTHROPIC_API_KEY` in `.env`.',
+    '- `soffice not found`: install LibreOffice and ensure `soffice` is on PATH.',
+    '- PyMuPDF errors in QA: `python3 -m pip install pymupdf`.',
+    '- PDF extraction errors: `python3 -m pip install pypdf`.',
     '',
   ].join('\n');
 }
@@ -157,6 +225,7 @@ async function main() {
 
   await fs.writeFile(FLOW_MD_PATH, buildFlowMarkdown(), 'utf8');
   await fs.writeFile(OVERVIEW_MD_PATH, buildOverviewMarkdown(), 'utf8');
+  await fs.writeFile(ENV_SETUP_MD_PATH, buildEnvironmentSetupMarkdown(), 'utf8');
 
   // eslint-disable-next-line no-console
   console.log('Documentation generated:');
@@ -168,6 +237,8 @@ async function main() {
   console.log(`- ${FLOW_MD_PATH}`);
   // eslint-disable-next-line no-console
   console.log(`- ${OVERVIEW_MD_PATH}`);
+  // eslint-disable-next-line no-console
+  console.log(`- ${ENV_SETUP_MD_PATH}`);
 }
 
 main().catch((err) => {
