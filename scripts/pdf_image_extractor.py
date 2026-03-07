@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import re
+import io
 from datetime import datetime, timezone
 from hashlib import sha1
 from pathlib import Path
@@ -15,15 +16,39 @@ def _normalize_snippet(text: str, max_chars: int = 180) -> str:
 
 _STOPWORDS = {
     "the", "and", "for", "with", "from", "this", "that", "were", "was", "are", "is",
-    "into", "onto", "over", "under", "than", "then", "your", "you", "have", "has", "had",
+    "into", "onto", "than", "then", "your", "you", "have", "has", "had",
     "not", "but", "its", "it", "their", "there", "here", "about", "into", "across", "between",
     "page", "streamlit", "localhost", "standard", "error", "info", "debug",
 }
 
+_OCR_ENGINE = None
+
+
+def _get_ocr_engine():
+    global _OCR_ENGINE
+    if _OCR_ENGINE is not None:
+        return _OCR_ENGINE
+    try:
+        from rapidocr_onnxruntime import RapidOCR
+        _OCR_ENGINE = RapidOCR()
+        return _OCR_ENGINE
+    except Exception:
+        _OCR_ENGINE = False
+        return None
+
 
 def _tokenize_semantic(text: str):
     tokens = re.findall(r"[a-z0-9]+", (text or "").lower())
-    return [t for t in tokens if len(t) > 2 and t not in _STOPWORDS]
+    cleaned = []
+    for t in tokens:
+        if len(t) < 4:
+            continue
+        if t in _STOPWORDS:
+            continue
+        if not re.search(r"[a-z]", t):
+            continue
+        cleaned.append(t)
+    return cleaned
 
 
 def _semantic_terms(text: str, max_terms: int = 18):
@@ -32,6 +57,72 @@ def _semantic_terms(text: str, max_terms: int = 18):
         freq[t] = freq.get(t, 0) + 1
     ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
     return [t for t, _ in ranked[:max_terms]]
+
+
+def _extract_band_words(page, rect):
+    words = page.get_text("words", clip=rect)
+    if not words:
+        return []
+    words = sorted(words, key=lambda w: (float(w[1]), float(w[0])))
+    out = []
+    for w in words:
+        token = str(w[4] if len(w) > 4 else "").strip()
+        if not token:
+            continue
+        out.append(token)
+    return out
+
+
+def _extract_image_intent_text(page, rect):
+    """Extract likely chart intent text: title, axis labels, and legend text."""
+    w = rect.width
+    h = rect.height
+    if w < 20 or h < 20:
+        return ""
+    R = type(rect)
+    top = R(rect.x0, rect.y0, rect.x1, rect.y0 + (h * 0.18))
+    bottom = R(rect.x0, rect.y1 - (h * 0.16), rect.x1, rect.y1)
+    left = R(rect.x0, rect.y0 + (h * 0.16), rect.x0 + (w * 0.18), rect.y1 - (h * 0.16))
+    right = R(rect.x1 - (w * 0.24), rect.y0, rect.x1, rect.y0 + (h * 0.55))
+    tokens = []
+    for band in (top, bottom, left, right):
+        tokens.extend(_extract_band_words(page, band))
+    # De-dupe while preserving order.
+    deduped = []
+    seen = set()
+    for t in tokens:
+        k = t.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        deduped.append(t)
+    return _normalize_snippet(" ".join(deduped), max_chars=240)
+
+
+def _ocr_intent_text_from_pix(pix):
+    engine = _get_ocr_engine()
+    if not engine:
+        return ""
+    try:
+        import numpy as np
+        from PIL import Image
+
+        buf = io.BytesIO(pix.tobytes("png"))
+        img = Image.open(buf).convert("RGB")
+        arr = np.array(img)
+        result, _ = engine(arr)
+        if not result:
+            return ""
+        texts = []
+        for item in result:
+            if len(item) < 2:
+                continue
+            txt = str(item[1]).strip()
+            if txt:
+                texts.append(txt)
+        return _normalize_snippet(" ".join(texts), max_chars=240)
+    except Exception:
+        return ""
 
 
 def _infer_semantic_tags(text: str):
@@ -419,8 +510,6 @@ def extract_pdf_images(path: Path, assets_root: Path):
         page = doc[page_idx]
         page_num = page_idx + 1
         page_text_snippet = _normalize_snippet(page.get_text("text"), max_chars=600)
-        page_tags = _infer_semantic_tags(page_text_snippet)
-        page_terms = _semantic_terms(page_text_snippet)
 
         for image_idx, img in enumerate(page.get_images(full=True), start=1):
             xref = int(img[0])
@@ -442,6 +531,12 @@ def extract_pdf_images(path: Path, assets_root: Path):
 
             rects = page.get_image_rects(xref)
             rect = rects[0] if rects else page.rect
+            intent_text = _extract_image_intent_text(page, rect)
+            if not intent_text:
+                ocr_pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect, alpha=False)
+                intent_text = _ocr_intent_text_from_pix(ocr_pix)
+            intent_terms = _semantic_terms(intent_text, max_terms=20)
+            intent_tags = _infer_semantic_tags(intent_text)
             context_rect = _expand_rect(rect, page.rect, pad=16.0)
             context = _clip_text_snippet(page, rect, max_words=80, max_chars=220)
             if len(context) < 20:
@@ -469,8 +564,9 @@ def extract_pdf_images(path: Path, assets_root: Path):
                 },
                 "contextSnippet": context,
                 "pageTextSnippet": page_text_snippet,
-                "semanticTags": page_tags,
-                "semanticTerms": page_terms,
+                "semanticTags": intent_tags,
+                "semanticTerms": intent_terms,
+                "intentTextSnippet": intent_text,
                 "colorSaturationRatio": None,
             })
 
@@ -482,7 +578,12 @@ def extract_pdf_images(path: Path, assets_root: Path):
             crop_rect = _trim_clipped_edge_words(page, crop_rect)
             crop_rect = _trim_edge_caption_bands(page, crop_rect)
             crop_rect = _tighten_to_non_bg_pixels(page, crop_rect, fitz)
+            intent_text = _extract_image_intent_text(page, crop_rect)
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=crop_rect, alpha=False)
+            if not intent_text:
+                intent_text = _ocr_intent_text_from_pix(pix)
+            intent_terms = _semantic_terms(intent_text, max_terms=20)
+            intent_tags = _infer_semantic_tags(intent_text)
             img_bytes = pix.tobytes("png")
             digest = sha1(img_bytes).hexdigest()
             if digest in dedupe:
@@ -515,8 +616,9 @@ def extract_pdf_images(path: Path, assets_root: Path):
                 },
                 "contextSnippet": context,
                 "pageTextSnippet": page_text_snippet,
-                "semanticTags": page_tags,
-                "semanticTerms": page_terms,
+                "semanticTags": intent_tags,
+                "semanticTerms": intent_terms,
+                "intentTextSnippet": intent_text,
                 "colorSaturationRatio": _saturation_ratio_from_pix(pix),
             })
 

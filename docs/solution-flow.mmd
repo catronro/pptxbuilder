@@ -1,31 +1,35 @@
 flowchart TD
-  A["pipeline/generate-freeport-deck.js\nStarts the CLI workflow and controls the full run"] --> B["pipeline/load-env.js (loadDotEnv)\nLoads environment variables from .env"]
-  B --> C{"parseArgs\nWhich input mode was provided?"}
+  A["pipeline/generate-freeport-deck.js\nStarts the CLI workflow and orchestrates the run"] --> B["pipeline/load-env.js\nLoads environment variables for runtime config"]
+  B --> C{"CLI mode\nInput file or plan file?"}
 
-  C -->|--input| D["scripts/extract_input_text.py (extractInputText)\nExtracts clean source text from input file"]
-  C -->|--plan-file| E["generate-freeport-deck.js\nReads an existing slide plan JSON"]
+  C -->|--input| D["scripts/extract_input_text.py\nExtracts source text for planning"]
+  C -->|--plan-file| E["pipeline/generate-freeport-deck.js\nLoads an existing plan JSON"]
+  C -->|--image-manifest| X["pipeline/generate-freeport-deck.js\nLoads optional image manifest JSON"]
 
-  D --> F["pipeline/llm-slide-planner.js (planSlidesFromText)\nBuilds prompts and runs planning attempts"]
-  F --> U["pipeline/llm-slide-planner.js (requestAnthropicJson)\nSends POST /messages request"]
-  U --> V["Anthropic LLM API\nGenerates draft slide plan JSON"]
-  V --> W["LLM response text\nReturns JSON-like content"]
-  W --> G
-  F --> G["pipeline/llm-slide-planner.js (normalizePlan)\nCleans fields and enforces output shape"]
+  D --> AA["pipeline/generate-freeport-deck.js\nCan emit extracted image manifest to output"]
+  D --> F["pipeline/llm-slide-planner.js (planSlidesFromText)\nBuilds prompts and prepares planning input"]
+  F --> U["pipeline/llm-slide-planner.js (requestAnthropicJson)\nCalls external model API"]
+  U --> V["External LLM (DEFAULT_BASE_URL/messages)\nReturns draft plan text"]
+  V --> W["Parse response\nConverts model output into JSON"]
+  W --> G["pipeline/llm-slide-planner.js (normalizePlan)\nNormalizes fields and output shape"]
   E --> G
 
-  G --> H["pipeline/llm-slide-planner.js (validatePlan)\nChecks schema, narrative, layout, and numeric rules"]
-  H --> I{"Validation passes?"}
-  I -->|No| J["Stop run\nThrow validation error and exit"]
-  I -->|Yes| K["Write output/*.plan.json\nPersists validated plan artifact"]
+  G --> H["pipeline/llm-slide-planner.js (validatePlan)\nEnforces schema, narrative, and layout rules"]
+  H --> I{"Plan valid?"}
+  I -->|No| J["Stop run\nEmit validation errors"]
+  I -->|Yes| K["Write output/*.plan.json\nPersist validated plan"]
 
-  K --> L["pipeline/freeport-deck-engine.js (renderPlanToFreeportDeck)\nConverts plan into themed slides"]
-  L --> M["behavior/freeport-slide-styleguide.js\nProvides shared visual styles and slide primitives"]
-  M --> N["Write output/*.pptx\nSaves rendered deck"]
+  K --> L["pipeline/freeport-deck-engine.js (renderPlanToFreeportDeck)\nRenders plan into Freeport slides"]
+  X --> Y["pipeline/freeport-deck-engine.js\nPasses imageAssets into renderer"]
+  Y --> Z["pipeline/image-matcher.js\nSelects best unused image per slide"]
+  Z --> L
+  L --> M["behavior/freeport-slide-styleguide.js\nProvides theme, styles, and slide primitives"]
+  M --> N["Write output/*.pptx\nSave rendered deck"]
 
-  N --> O["scripts/qa_rendered_deck.py (runPostRenderQa)\nChecks rendered text/title placement via PDF"]
-  O --> P{"QA passes?"}
-  P -->|No| Q["Stop run\nThrow QA error and exit"]
-  P -->|Yes| R["Success\nOutput includes plan JSON, PPTX, and QA PDF"]
+  N --> O["scripts/qa_rendered_deck.py\nRuns post-render QA checks against PDF"]
+  O --> P{"QA pass?"}
+  P -->|No| Q["Stop run\nEmit QA issues"]
+  P -->|Yes| R["Success\nPlan + deck (+ QA PDF) available in output/"]
 
-  S["behavior/freeport-slide-storytelling-skill.md\nDefines LLM storytelling and schema instructions"] -. prompt source .-> F
-  T["tests/fixtures/*.json + scripts/test-validator.js\nOffline validator tests outside runtime path"] -. test coverage .-> H
+  S["behavior/freeport-slide-storytelling-skill.md\nDefines LLM storytelling/schema instructions"] -. prompt source .-> F
+  T["scripts/test-validator.js + tests/fixtures/*.json\nOffline tests for validation rules"] -. test coverage .-> H

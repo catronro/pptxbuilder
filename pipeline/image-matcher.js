@@ -3,7 +3,6 @@
  * Scores extracted image assets against slide semantics and returns a selector
  * that can pick the best unused image for each slide model.
  */
-const path = require('node:path');
 const fs = require('node:fs');
 
 function sourceRefPages(sourceRefs = []) {
@@ -32,10 +31,28 @@ function tokenize(text = '') {
     .filter((t) => t && t.length > 2 && !STOPWORDS.has(t));
 }
 
+function canonicalizeToken(t = '') {
+  let x = String(t || '').toLowerCase().trim();
+  if (!x) return '';
+  if (x === 'drilling' || x === 'drilled') return 'drill';
+  if (x === 'overdrilling' || x === 'overdrilled') return 'overdrill';
+  if (x === 'underdrilling' || x === 'underdrilled') return 'underdrill';
+  if (x === 'clusters' || x === 'clustered') return 'cluster';
+  if (x === 'holes' || x === 'hole') return 'hole';
+  if (x === 'costton' || x === 'cost') return 'cost';
+  return x;
+}
+
+function canonicalizeTokens(tokens = []) {
+  return [...new Set(tokens.map(canonicalizeToken).filter(Boolean))];
+}
+
 function overlapScore(queryTokens = [], candidateTokens = []) {
-  if (!queryTokens.length || !candidateTokens.length) return 0;
-  const q = new Set(queryTokens);
-  const c = new Set(candidateTokens);
+  const qn = canonicalizeTokens(queryTokens);
+  const cn = canonicalizeTokens(candidateTokens);
+  if (!qn.length || !cn.length) return 0;
+  const q = new Set(qn);
+  const c = new Set(cn);
   let overlap = 0;
   for (const t of q) {
     if (c.has(t)) overlap += 1;
@@ -44,9 +61,11 @@ function overlapScore(queryTokens = [], candidateTokens = []) {
 }
 
 function overlapCount(queryTokens = [], candidateTokens = []) {
-  if (!queryTokens.length || !candidateTokens.length) return 0;
-  const q = new Set(queryTokens);
-  const c = new Set(candidateTokens);
+  const qn = canonicalizeTokens(queryTokens);
+  const cn = canonicalizeTokens(candidateTokens);
+  if (!qn.length || !cn.length) return 0;
+  const q = new Set(qn);
+  const c = new Set(cn);
   let overlap = 0;
   for (const t of q) {
     if (c.has(t)) overlap += 1;
@@ -61,9 +80,11 @@ const CONCEPT_GROUPS = [
 ];
 
 function conceptBoost(queryTokens = [], candidateTokens = []) {
-  if (!queryTokens.length || !candidateTokens.length) return 0;
-  const q = new Set(queryTokens);
-  const c = new Set(candidateTokens);
+  const qn = canonicalizeTokens(queryTokens);
+  const cn = canonicalizeTokens(candidateTokens);
+  if (!qn.length || !cn.length) return 0;
+  const q = new Set(qn);
+  const c = new Set(cn);
   let score = 0;
   for (const group of CONCEPT_GROUPS) {
     const qHit = group.some((t) => q.has(t));
@@ -96,18 +117,15 @@ function buildImageSelector(imageAssets) {
     const heightPx = Number(img?.heightPx || 0);
     if (!file || !Number.isFinite(page) || page <= 0) continue;
     if (!fs.existsSync(file)) continue;
-    const contextTokens = tokenize(`${img?.contextSnippet || ''} ${path.basename(file)}`);
-    const pageTokens = tokenize(`${img?.pageTextSnippet || ''}`);
-    const semanticTokens = Array.isArray(img?.semanticTerms) && img.semanticTerms.length
-      ? img.semanticTerms.map((t) => String(t).toLowerCase())
-      : [...new Set([...contextTokens, ...pageTokens])];
+    const semanticTokens = Array.isArray(img?.semanticTerms)
+      ? canonicalizeTokens(img.semanticTerms.map((t) => String(t).toLowerCase()).filter(Boolean))
+      : [];
+    if (!semanticTokens.length) continue;
     const enriched = {
       ...img,
       page,
       file,
       area: widthPx * heightPx,
-      contextTokens,
-      pageTokens,
       semanticTokens,
     };
     const bucket = perPage.get(page) || [];
@@ -159,7 +177,8 @@ function buildImageSelector(imageAssets) {
       ...(Array.isArray(slideModel?.rightBullets) ? slideModel.rightBullets : []),
     ].join(' ');
     const queryTokens = tokenize(queryText);
-    if (!queryTokens.length) return null;
+    const queryTokensNorm = canonicalizeTokens(queryTokens);
+    if (!queryTokensNorm.length) return null;
 
     const pageCandidates = pages.flatMap((p) => perPage.get(p) || []).filter((img) => !used.has(img.file));
     const fallbackCandidates = all.filter((img) => !used.has(img.file));
@@ -171,7 +190,7 @@ function buildImageSelector(imageAssets) {
       bestScore,
       bestOverlap,
       bestSemantic,
-    } = rankBestCandidate(candidates, queryTokens, pages);
+    } = rankBestCandidate(candidates, queryTokensNorm, pages);
     if (!best) return null;
     // Intent-first gating: if semantics do not align confidently, do not include image.
     if (bestOverlap < 2) return null;

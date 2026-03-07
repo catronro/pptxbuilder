@@ -1,6 +1,6 @@
 # Environment Setup (New Machine)
 
-Generated: 2026-03-07T01:39:12.605Z
+Generated from live scan: 2026-03-07T03:46:22.521Z
 
 ## 1. Prerequisites
 - Node.js 20+ and npm
@@ -23,12 +23,13 @@ Create `.env` in the project root:
 cp .env.example .env
 ```
 
-Then edit `.env` and set:
-- `ANTHROPIC_API_KEY` to a valid key
-- Optional: `ANTHROPIC_MODEL` (defaults to `claude-opus-4-6`)
-- Optional: `ANTHROPIC_BASE_URL` / `ANTHROPIC_VERSION`
+Set these values (detected from code):
+- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_MODEL`
+- `ANTHROPIC_VERSION`
 
-## 4. Verify Basic Health
+## 4. Verify Installation
 ```bash
 node -v
 python3 --version
@@ -37,24 +38,24 @@ npm run test:validator
 npm run docs:generate
 ```
 
-## 5. Run the Pipeline
-Input mode (source file to full deck):
+## 5. Run The Pipeline
+Input mode:
 ```bash
 npm run generate:freeport -- --input <path-to-pdf-or-text> --output output/my-deck.pptx
 ```
 
-Plan mode (existing plan JSON to deck):
+Plan-file mode:
 ```bash
 npm run generate:freeport -- --plan-file <path-to-plan.json> --output output/my-deck.pptx
 ```
 
-## 6. Expected Artifacts
-- `output/*.plan.json` (validated plan)
-- `output/*.pptx` (rendered deck)
-- `output/*.pdf` (QA conversion artifact)
+## 6. Expected Outputs
+- `output/*.plan.json`
+- `output/*.pptx`
+- `output/*.pdf` (QA conversion output)
 
 ## Troubleshooting
-- Missing API key: set `ANTHROPIC_API_KEY` in `.env`.
-- `soffice not found`: install LibreOffice and ensure `soffice` is on PATH.
-- PyMuPDF errors in QA: `python3 -m pip install pymupdf`.
-- PDF extraction errors: `python3 -m pip install pypdf`.
+- Missing API key: add it to `.env`.
+- `soffice not found`: install LibreOffice and ensure the binary is on PATH.
+- PyMuPDF import error: `python3 -m pip install pymupdf`.
+- pypdf import error: `python3 -m pip install pypdf`.

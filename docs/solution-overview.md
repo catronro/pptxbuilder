@@ -1,51 +1,53 @@
 # Solution Overview (New Developer Guide)
 
-Generated: 2026-03-07T01:39:12.605Z
+Generated from live scan: 2026-03-07T03:46:22.521Z
 
-## What This Solution Does
-This project builds a Freeport-branded PowerPoint deck from either raw source content (`--input`) or a prebuilt slide plan (`--plan-file`).
-The pipeline enforces narrative quality and structural correctness before writing a final deck.
+## What This System Does
+This system builds Freeport-branded PowerPoint decks from either raw source input or an existing plan file.
+It applies strict plan validation before rendering and runs post-render QA before final success.
 
-## End-to-End Flow
-1. `pipeline/generate-freeport-deck.js` starts the run, parses args, and orchestrates every step.
-2. `pipeline/load-env.js` loads `.env` values (API key/model/base URL overrides).
-3. If `--input` is used, `scripts/extract_input_text.py` extracts source text.
-4. `pipeline/llm-slide-planner.js` creates prompts and calls Anthropic (`POST /messages`) to produce a plan.
-5. The same planner file normalizes and validates the plan against strict narrative/layout/schema rules.
-6. `pipeline/freeport-deck-engine.js` renders validated slides into a styled `.pptx`.
-7. `scripts/qa_rendered_deck.py` converts to PDF and checks title/bullet presence and clipping risk.
-8. On success, artifacts are written to `output/` (`.plan.json`, `.pptx`, and QA PDF).
+## Runtime Entry Point
+- Primary CLI: `pipeline/generate-freeport-deck.js`
+- Supported flags discovered from code: `--input`, `--output`, `--plan-file`, `--image-manifest`, `--max-slides`
 
-## Core Components
-- `behavior/freeport-slide-storytelling-skill.md`: Prompt contract for narrative shape (SCQA + pyramid), source refs, and layout intent.
-- `behavior/freeport-slide-styleguide.js`: Visual system (theme, text styles, shape styles, chart defaults, slide helpers).
-- `pipeline/llm-slide-planner.js`: Planning brain and pre-render gatekeeper.
-- `pipeline/freeport-deck-engine.js`: Rendering layer from logical layouts to visual slides.
-- `scripts/qa_rendered_deck.py`: Post-render quality gate.
+## How It Works (In Order)
+1. `pipeline/generate-freeport-deck.js` parses CLI args and loads environment variables via `pipeline/load-env.js`.
+2. In input mode, `scripts/extract_input_text.py` extracts text from source files.
+3. `pipeline/llm-slide-planner.js` builds prompts and calls the LLM endpoint (DEFAULT_BASE_URL/messages).
+4. The planner normalizes and validates the plan against schema/narrative/layout constraints.
+5. If image assets are present or `--image-manifest` is provided, the renderer uses `pipeline/image-matcher.js` to map images to slides.
+6. `pipeline/freeport-deck-engine.js` renders the validated plan into a PPTX using `behavior/freeport-slide-styleguide.js`.
+7. `scripts/qa_rendered_deck.py` performs post-render QA checks on the converted PDF.
+8. If all checks pass, artifacts are available in `output/`.
 
-## Where The LLM Is Called
-The outbound LLM call happens in `pipeline/llm-slide-planner.js` inside `requestAnthropicJson()`, which uses `fetch()` to call Anthropic `.../messages`.
-This function is invoked by `planSlidesFromText()`.
+## LLM Integration Details
+- Provider detected: Anthropic
+- Planner call function: `requestAnthropicJson`
+- Orchestrator function: `planSlidesFromText`
+- Endpoint pattern: `DEFAULT_BASE_URL/messages`
+- Environment variables used: `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL`, `ANTHROPIC_VERSION`
 
-## Runtime Modes
-- Input mode: `node pipeline/generate-freeport-deck.js --input <file>`
-- Plan mode: `node pipeline/generate-freeport-deck.js --plan-file <plan.json>`
+## Quality Gates
+- Pre-render plan validation: enabled
+- Planner retry on failed validation: enabled (2 attempts)
+- Post-render QA: enabled
+- Image manifest path: detected (--image-manifest)
+- Image-aware rendering path: detected (image-matcher in engine)
 
-## Failure Behavior
-- Validation failure: run stops before rendering and prints detailed rule violations.
-- Rendering failure: run stops with render error.
-- QA failure: run stops after render and prints slide-level QA issues.
+## Main Code Areas
+- Pipeline files: `pipeline/freeport-deck-engine.js`, `pipeline/generate-freeport-deck.js`, `pipeline/image-matcher.js`, `pipeline/llm-slide-planner.js`, `pipeline/load-env.js`
+- Behavior files: `behavior/freeport-slide-storytelling-skill.md`, `behavior/freeport-slide-styleguide.js`
+- Runtime scripts: `scripts/extract_input_text.py`, `scripts/pdf_image_extractor.py`, `scripts/qa_rendered_deck.py`, `scripts/test-validator.js`
 
-## Generated Documentation Artifacts
-- `docs/solution-flow.mmd`: Mermaid source for the architecture flow.
-- `docs/solution-flow.png`: Rendered flow diagram.
-- `docs/solution-flow.md`: Lightweight page that displays the PNG.
-- `docs/environment-setup.md`: Fresh environment setup instructions.
-- `docs/solution-overview.md`: This narrative guide.
+## Artifacts Generated By This Documentation Script
+- `docs/structure-scan.json` (machine-readable scan results)
+- `docs/solution-flow.mmd` (diagram source)
+- `docs/solution-flow.png` (rendered flow diagram)
+- `docs/solution-flow.md` (diagram page)
+- `docs/solution-overview.md` (this narrative)
+- `docs/environment-setup.md` (environment setup guide)
 
-## How To Regenerate This Documentation
-Run one command from project root:
-
+## Refresh Command
 ```bash
 npm run docs:generate
 ```
