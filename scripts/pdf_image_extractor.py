@@ -59,6 +59,66 @@ def _semantic_terms(text: str, max_terms: int = 18):
     return [t for t, _ in ranked[:max_terms]]
 
 
+def _synthesize_semantic_terms(intent_text: str, max_terms: int = 20):
+    """Build stronger intent terms from OCR/title phrases for chart matching."""
+    base_terms = _semantic_terms(intent_text, max_terms=max_terms)
+    text = (intent_text or "").lower()
+    synthesized = []
+
+    def add(term: str):
+        term = term.strip().lower()
+        if not term:
+            return
+        if term not in synthesized:
+            synthesized.append(term)
+
+    # Phrase-level synthesis for drilling charts.
+    if "under/over drill" in text or ("under" in text and "over" in text and "drill" in text):
+        add("underdrill")
+        add("overdrill")
+        add("drill")
+    if "overdrill" in text or "overdrilling" in text or "overdrilled" in text:
+        add("overdrill")
+    if "underdrill" in text or "underdrilling" in text or "underdrilled" in text:
+        add("underdrill")
+    if "drill performance" in text:
+        add("drill")
+        add("performance")
+
+    # Phrase-level synthesis for water/cluster charts.
+    if "water present" in text:
+        add("water")
+    if "wet holes" in text or "water-bearing holes" in text:
+        add("water")
+        add("hole")
+    if "clustered" in text or "clusters" in text or "cluster" in text:
+        add("cluster")
+
+    # Phrase-level synthesis for plugged hole visuals.
+    if "plugged holes" in text or "plugged hole" in text:
+        add("plugged")
+        add("hole")
+
+    # KPI intent synthesis.
+    if "kcal" in text or "energy" in text:
+        add("energy")
+        add("kcal")
+    if "cost" in text and "ton" in text:
+        add("cost")
+    if "fragmentation" in text or "p80" in text:
+        add("fragmentation")
+        add("p80")
+
+    # Merge synthesized terms before base terms so concept tokens survive caps.
+    merged = []
+    for term in synthesized + base_terms:
+        if term not in merged:
+            merged.append(term)
+        if len(merged) >= max_terms:
+            break
+    return merged
+
+
 def _extract_band_words(page, rect):
     words = page.get_text("words", clip=rect)
     if not words:
@@ -535,7 +595,7 @@ def extract_pdf_images(path: Path, assets_root: Path):
             if not intent_text:
                 ocr_pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=rect, alpha=False)
                 intent_text = _ocr_intent_text_from_pix(ocr_pix)
-            intent_terms = _semantic_terms(intent_text, max_terms=20)
+            intent_terms = _synthesize_semantic_terms(intent_text, max_terms=20)
             intent_tags = _infer_semantic_tags(intent_text)
             context_rect = _expand_rect(rect, page.rect, pad=16.0)
             context = _clip_text_snippet(page, rect, max_words=80, max_chars=220)
@@ -582,7 +642,7 @@ def extract_pdf_images(path: Path, assets_root: Path):
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), clip=crop_rect, alpha=False)
             if not intent_text:
                 intent_text = _ocr_intent_text_from_pix(pix)
-            intent_terms = _semantic_terms(intent_text, max_terms=20)
+            intent_terms = _synthesize_semantic_terms(intent_text, max_terms=20)
             intent_tags = _infer_semantic_tags(intent_text)
             img_bytes = pix.tobytes("png")
             digest = sha1(img_bytes).hexdigest()

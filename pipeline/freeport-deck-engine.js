@@ -625,32 +625,32 @@ function addChartBarImage(slide, pres, model, ctx = {}) {
   const actualColor = FREEPORT_THEME.chartDefaults.chartColors[1] || '79D9FF';
 
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: sx(0.42), y: 1.95, w: 6.95, h: 4.85,
+    x: sx(0.42), y: 1.95, w: 6.70, h: 4.85,
     ...shapeStyle('card'),
   });
   if (image?.file) {
     addCardImage(slide, pres, image, {
-      x: sx(0.48), y: 2.01, w: 6.83, h: 4.73, drawFrame: false, pad: 0.03,
+      x: sx(0.48), y: 2.01, w: 6.58, h: 4.73, drawFrame: false, pad: 0.03,
     });
   }
 
-  const chartCardX = sx(7.55);
+  const chartCardX = sx(7.30);
   const chartCardY = 1.95;
-  const chartCardW = 5.35;
+  const chartCardW = 5.60;
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
     x: chartCardX, y: chartCardY, w: chartCardW, h: 2.75,
     ...shapeStyle('cardAlt'),
   });
   slide.addText(chart.title || 'Planned vs. Actual Blast Performance', {
-    x: sx(7.78), y: 2.15, w: 4.95, h: 0.35,
+    x: sx(7.53), y: 2.15, w: 5.20, h: 0.35,
     ...textStyle('label', { bold: true, color: FREEPORT_THEME.colors.brandBlue }),
   });
 
   const panelGap = 0.12;
-  const panelX = sx(7.78);
+  const panelX = sx(7.53);
   const panelY = 2.55;
   const panelH = 1.72;
-  const panelW = (4.95 - (panelGap * (shownCats.length - 1))) / shownCats.length;
+  const panelW = (5.20 - (panelGap * (shownCats.length - 1))) / shownCats.length;
   shownCats.forEach((label, idx) => {
     const displayLabel = normalizeKpiPanelLabel(label);
     const localSeries = compactSeries.map((s) => ({
@@ -701,15 +701,15 @@ function addChartBarImage(slide, pres, model, ctx = {}) {
   });
 
   slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: sx(7.55), y: 4.9, w: 5.35, h: 1.9,
+    x: sx(7.30), y: 4.9, w: 5.60, h: 1.9,
     ...shapeStyle('card'),
   });
   slide.addText('Key Takeaways', {
-    x: sx(7.78), y: 5.08, w: 4.95, h: 0.3,
+    x: sx(7.53), y: 5.08, w: 5.20, h: 0.3,
     ...textStyle('cardHeading'),
   });
   slide.addText(bulletRuns(listOrEmpty(model.bullets).slice(0, 4)), {
-    x: sx(7.78), y: 5.54, w: 4.95, h: 1.08,
+    x: sx(7.53), y: 5.54, w: 5.20, h: 1.08,
     ...textStyle('body', { fontSize: 12, fit: 'shrink' }),
   });
 }

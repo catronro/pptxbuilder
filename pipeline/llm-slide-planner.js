@@ -47,6 +47,16 @@ function safeJsonParse(raw) {
 }
 
 async function requestAnthropicJson({ apiKey, systemPrompt, userPrompt }) {
+  return requestAnthropicJsonWithOptions({ apiKey, systemPrompt, userPrompt });
+}
+
+async function requestAnthropicJsonWithOptions({
+  apiKey,
+  systemPrompt,
+  userPrompt,
+  temperature = 0.2,
+  maxTokens = 3500,
+}) {
   const response = await fetch(`${DEFAULT_BASE_URL}/messages`, {
     method: 'POST',
     headers: {
@@ -56,8 +66,8 @@ async function requestAnthropicJson({ apiKey, systemPrompt, userPrompt }) {
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      max_tokens: 3500,
-      temperature: 0.2,
+      max_tokens: maxTokens,
+      temperature,
       system: systemPrompt,
       messages: [
         { role: 'user', content: userPrompt },
@@ -173,10 +183,195 @@ function normalizePlan(plan, maxSlides) {
   return normalized;
 }
 
+function normalizeOutline(outline, maxSlides) {
+  if (!outline || typeof outline !== 'object') {
+    throw new Error('Outline planner returned empty outline.');
+  }
+
+  function normalizeRole(role) {
+    const raw = String(role || '').trim().toLowerCase();
+    if (raw === 'executive_summary' || raw === 'supporting_logic' || raw === 'evidence' || raw === 'implication') return raw;
+    if (raw === 'main_answer' || raw === 'summary') return 'executive_summary';
+    if (raw === 'supporting_argument' || raw === 'logic' || raw === 'supporting') return 'supporting_logic';
+    if (raw === 'proof' || raw === 'data') return 'evidence';
+    if (raw === 'recommendation' || raw === 'next_steps' || raw === 'synthesis') return 'implication';
+    return raw;
+  }
+
+  function normalizeLayout(layout, role) {
+    const raw = String(layout || '').trim().toLowerCase();
+    if (ALLOWED_LAYOUTS.has(raw)) return raw;
+    if (raw === 'executive_summary' || raw === 'summary') return 'summary_card';
+    if (raw === 'text_and_chart' || raw === 'chart') {
+      return normalizeRole(role) === 'supporting_logic' ? 'metrics' : 'chart_bar';
+    }
+    if (raw === 'single_chart') return 'chart_bar';
+    if (raw === 'assertion_evidence_text') return 'two_column';
+    if (raw === 'assertion_evidence_chart') {
+      return normalizeRole(role) === 'supporting_logic' ? 'metrics' : 'chart_bar';
+    }
+    if (raw === 'text_and_image' || raw === 'image_and_text') return 'two_column';
+    if (raw === 'actions' || raw === 'next_steps' || raw === 'implication') return 'action_split';
+    if (raw === 'kpi' || raw === 'dashboard') return 'metrics';
+    return raw;
+  }
+
+  const rawArgs = Array.isArray(outline.supportingArguments) ? outline.supportingArguments.slice(0, 4) : [];
+  const normalizedArgs = rawArgs.map((a, idx) => {
+    if (typeof a === 'string') {
+      return { id: `A${idx + 1}`, claim: String(a || '').trim() };
+    }
+    return {
+      id: String(a?.id || `A${idx + 1}`),
+      claim: String(a?.claim || a?.statement || a?.text || '').trim(),
+    };
+  });
+
+  const claimById = new Map(normalizedArgs.map((a) => [a.id, normalizeForDuplicateCheck(a.claim)]));
+  function normalizeSupportRef(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^A[1-4]$/i.test(raw)) return raw.toUpperCase();
+    if (/^all$/i.test(raw)) return 'ALL';
+    if (/^[1-4]$/.test(raw)) return `A${raw}`;
+    const key = normalizeForDuplicateCheck(raw);
+    for (const [id, claim] of claimById.entries()) {
+      if (!claim) continue;
+      if (claim.includes(key) || key.includes(claim)) return id;
+    }
+    return raw;
+  }
+
+  function normalizeOutlineTitle(rawTitle, fallback) {
+    let title = String(rawTitle || fallback || '').replace(/\s+/g, ' ').trim();
+    if (!title) return fallback;
+    const words = title.split(' ');
+    if (words.length > MAX_TITLE_WORDS) {
+      title = words.slice(0, MAX_TITLE_WORDS).join(' ');
+    }
+    if (title.length > MAX_TITLE_CHARS) {
+      const cut = title.slice(0, MAX_TITLE_CHARS);
+      title = cut.replace(/\s+\S*$/, '').trim();
+    }
+    return title.replace(/[,;:\-–—]\s*$/, '').replace(/\.\s*$/, '').trim();
+  }
+
+  return {
+    deckTitle: String(outline.deckTitle || 'Generated Narrative Deck'),
+    deckSubtitle: String(outline.deckSubtitle || 'LLM-generated outline'),
+    mainAnswer: String(outline.mainAnswer || ''),
+    supportingArguments: normalizedArgs,
+    slides: Array.isArray(outline.slides)
+      ? outline.slides.slice(0, maxSlides).map((s, i) => ({
+          index: Number(s.index) || i + 1,
+          title: normalizeOutlineTitle(s.title, `Slide ${i + 1}`),
+          pyramidRole: normalizeRole(s.pyramidRole),
+          supportsArgument: normalizeSupportRef(s.supportsArgument) || (i > 0 ? 'ALL' : ''),
+          layout: normalizeLayout(s.layout, s.pyramidRole),
+          intent: String(s.intent || ''),
+        }))
+      : [],
+  };
+}
+
+function validateOutline(outline, maxSlides) {
+  const issues = [];
+  const slides = outline.slides || [];
+
+  if (!outline.mainAnswer || !outline.mainAnswer.trim()) {
+    issues.push('Outline requires non-empty mainAnswer.');
+  }
+  if (!Array.isArray(outline.supportingArguments) || outline.supportingArguments.length < 2 || outline.supportingArguments.length > 4) {
+    issues.push('Outline supportingArguments must contain 2-4 items.');
+  } else {
+    for (const arg of outline.supportingArguments) {
+      if (!/^A[1-4]$/.test(arg.id || '')) issues.push(`Outline has invalid argument id "${arg.id}".`);
+      if (!arg.claim || !arg.claim.trim()) issues.push(`Outline argument ${arg.id || '(missing)'} has empty claim.`);
+    }
+  }
+
+  if (slides.length < 5 || slides.length > maxSlides) {
+    issues.push(`Outline slide count must be between 5 and ${maxSlides}, got ${slides.length}.`);
+  }
+  if (slides.length && slides[0].pyramidRole !== 'executive_summary') {
+    issues.push('Outline first slide must be executive_summary.');
+  }
+  if (slides.length && slides[slides.length - 1].pyramidRole !== 'implication') {
+    issues.push('Outline final slide must be implication.');
+  }
+  if (!slides.some((s) => s.pyramidRole === 'evidence')) {
+    issues.push('Outline must include at least one evidence slide.');
+  }
+
+  slides.forEach((s, idx) => {
+    const n = idx + 1;
+    if (!ALLOWED_LAYOUTS.has(s.layout)) {
+      issues.push(`Outline slide ${n}: invalid layout "${s.layout}".`);
+    }
+    if (!ALLOWED_ROLES.has(s.pyramidRole)) {
+      issues.push(`Outline slide ${n}: invalid pyramidRole "${s.pyramidRole}".`);
+    }
+    if (ROLE_LAYOUT_MAP[s.pyramidRole] && !ROLE_LAYOUT_MAP[s.pyramidRole].has(s.layout)) {
+      issues.push(`Outline slide ${n}: layout "${s.layout}" not allowed for role "${s.pyramidRole}".`);
+    }
+    if (idx > 0 && (!s.supportsArgument || !s.supportsArgument.trim())) {
+      issues.push(`Outline slide ${n}: missing supportsArgument.`);
+    }
+    if (s.supportsArgument && s.supportsArgument !== 'ALL' && !/^A[1-4]$/.test(s.supportsArgument)) {
+      issues.push(`Outline slide ${n}: invalid supportsArgument "${s.supportsArgument}".`);
+    }
+    if (!s.title || !s.title.trim()) {
+      issues.push(`Outline slide ${n}: title is required.`);
+    }
+    const titleWords = String(s.title || '').trim().split(/\s+/).filter(Boolean).length;
+    const titleChars = String(s.title || '').length;
+    if (titleWords > MAX_TITLE_WORDS) {
+      issues.push(`Outline slide ${n}: title exceeds ${MAX_TITLE_WORDS} words.`);
+    }
+    if (titleChars > MAX_TITLE_CHARS) {
+      issues.push(`Outline slide ${n}: title exceeds ${MAX_TITLE_CHARS} chars.`);
+    }
+    if (!s.intent || !s.intent.trim()) {
+      issues.push(`Outline slide ${n}: intent is required.`);
+    }
+  });
+
+  if (issues.length) {
+    throw new Error(`Outline validation failed:\n- ${issues.join('\n- ')}`);
+  }
+}
+
+function normalizeForDuplicateCheck(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isAssertionTitle(title) {
+  const t = String(title || '').trim();
+  if (!t) return false;
+  if (/^(overview|analysis|findings|next steps|executive summary)\b/i.test(t)) return false;
+  const verbHint = /\b(is|are|was|were|will|can|must|shows|show|indicates|drive|drives|reduce|reduces|increase|increases|create|creates|caused|improved|improves|requires)\b/i;
+  return verbHint.test(t) || /%|\$|[0-9]/.test(t);
+}
+
 function validatePlan(plan) {
   const issues = [];
   const slides = plan.slides || [];
   const metricValueByLabel = new Map();
+  const argumentIds = new Set((plan.supportingArguments || []).map((a) => a.id));
+  const argCoverage = new Map(Array.from(argumentIds).map((id) => [id, 0]));
+  const roleOrder = {
+    executive_summary: 0,
+    supporting_logic: 1,
+    evidence: 2,
+    implication: 3,
+  };
+  let lastRoleRank = -1;
+  const seenBullets = new Map();
+  const seenTitles = new Set();
 
   if (!plan.mainAnswer || !plan.mainAnswer.trim()) {
     issues.push('`mainAnswer` is required.');
@@ -237,6 +432,7 @@ function validatePlan(plan) {
 
   slides.forEach((s, idx) => {
     const n = idx + 1;
+    const currentRoleRank = roleOrder[s.pyramidRole] ?? -1;
     if (!ALLOWED_LAYOUTS.has(s.layout)) {
       issues.push(`Slide ${n}: invalid layout "${s.layout}".`);
     }
@@ -252,13 +448,28 @@ function validatePlan(plan) {
     if (s.supportsArgument && s.supportsArgument !== 'ALL' && !/^A[1-4]$/.test(s.supportsArgument)) {
       issues.push(`Slide ${n}: invalid supportsArgument "${s.supportsArgument}".`);
     }
+    if (idx > 0 && argCoverage.has(s.supportsArgument)) {
+      argCoverage.set(s.supportsArgument, argCoverage.get(s.supportsArgument) + 1);
+    }
     if (!s.title || !s.title.trim()) {
       issues.push(`Slide ${n}: title is required.`);
     } else {
+      const dedupeTitle = normalizeForDuplicateCheck(s.title);
+      if (seenTitles.has(dedupeTitle)) {
+        issues.push(`Slide ${n}: title duplicates another slide title.`);
+      }
+      seenTitles.add(dedupeTitle);
       const words = s.title.trim().split(/\s+/).length;
       const chars = s.title.length;
       if (words > MAX_TITLE_WORDS) issues.push(`Slide ${n}: title exceeds ${MAX_TITLE_WORDS} words.`);
       if (chars > MAX_TITLE_CHARS) issues.push(`Slide ${n}: title exceeds ${MAX_TITLE_CHARS} characters.`);
+      if (!isAssertionTitle(s.title)) issues.push(`Slide ${n}: title is not assertion-based enough.`);
+    }
+    if (currentRoleRank < lastRoleRank) {
+      issues.push(`Slide ${n}: pyramidRole order regressed from previous slide.`);
+    }
+    if (currentRoleRank >= 0) {
+      lastRoleRank = currentRoleRank;
     }
     if (!Array.isArray(s.sourceRefs) || s.sourceRefs.length < 1 || s.sourceRefs.length > 3) {
       issues.push(`Slide ${n}: sourceRefs must contain 1-3 entries.`);
@@ -285,6 +496,28 @@ function validatePlan(plan) {
       }
     }
 
+    const bulletBuckets = [
+      ...(Array.isArray(s.bullets) ? s.bullets : []),
+      ...(Array.isArray(s.leftBullets) ? s.leftBullets : []),
+      ...(Array.isArray(s.rightBullets) ? s.rightBullets : []),
+    ];
+    bulletBuckets.forEach((b) => {
+      const text = String(b || '').trim();
+      if (!text) return;
+      const wc = text.split(/\s+/).length;
+      if (wc > 18) {
+        issues.push(`Slide ${n}: bullet exceeds 18 words ("${text.slice(0, 60)}...").`);
+      }
+      const key = normalizeForDuplicateCheck(text);
+      if (!key) return;
+      const firstSeenSlide = seenBullets.get(key);
+      if (firstSeenSlide && firstSeenSlide !== n) {
+        issues.push(`Slide ${n}: repeated bullet from slide ${firstSeenSlide}.`);
+      } else {
+        seenBullets.set(key, n);
+      }
+    });
+
     if (Array.isArray(s.metrics)) {
       for (const m of s.metrics) {
         const label = String(m.label || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -308,10 +541,86 @@ function validatePlan(plan) {
       issues.push(`Numeric consistency failed: metric "${label}" has conflicting values: ${Array.from(values).join(' | ')}`);
     }
   }
+  for (const [argId, count] of argCoverage.entries()) {
+    if (count === 0) {
+      issues.push(`Narrative coverage failed: ${argId} is not supported by any non-summary slide.`);
+    }
+  }
+  const usedArgs = Array.from(argCoverage.values()).filter((v) => v > 0).length;
+  if ((plan.supportingArguments || []).length >= 3 && usedArgs < 2) {
+    issues.push('Narrative coverage failed: supporting arguments are overly concentrated on a single argument.');
+  }
 
   if (issues.length) {
     throw new Error(`Plan validation failed before render:\n- ${issues.join('\n- ')}`);
   }
+}
+
+function scorePlanQuality(plan) {
+  const findings = [];
+  let score = 100;
+  const slides = plan.slides || [];
+  const titles = slides.map((s) => String(s.title || '').trim()).filter(Boolean);
+  const normTitles = new Set();
+  for (const t of titles) {
+    const key = normalizeForDuplicateCheck(t);
+    if (normTitles.has(key)) {
+      findings.push('Duplicate slide titles reduce narrative signal.');
+      score -= 10;
+    }
+    normTitles.add(key);
+    if (!isAssertionTitle(t)) {
+      findings.push(`Weak assertion title: "${t}".`);
+      score -= 8;
+    }
+  }
+
+  const roleOrder = { executive_summary: 0, supporting_logic: 1, evidence: 2, implication: 3 };
+  let prev = -1;
+  for (const s of slides) {
+    const curr = roleOrder[s.pyramidRole] ?? -1;
+    if (curr < prev) {
+      findings.push('Pyramid role order regresses across slides.');
+      score -= 12;
+      break;
+    }
+    if (curr >= 0) prev = curr;
+  }
+
+  const bulletSet = new Set();
+  let repeatedBullets = 0;
+  slides.forEach((s) => {
+    const bullets = [
+      ...(Array.isArray(s.bullets) ? s.bullets : []),
+      ...(Array.isArray(s.leftBullets) ? s.leftBullets : []),
+      ...(Array.isArray(s.rightBullets) ? s.rightBullets : []),
+    ];
+    bullets.forEach((b) => {
+      const key = normalizeForDuplicateCheck(b);
+      if (!key) return;
+      if (bulletSet.has(key)) repeatedBullets += 1;
+      bulletSet.add(key);
+    });
+  });
+  if (repeatedBullets > 0) {
+    findings.push(`Repeated bullet lines detected (${repeatedBullets}).`);
+    score -= Math.min(20, repeatedBullets * 4);
+  }
+
+  const supportingIds = new Set((plan.supportingArguments || []).map((a) => a.id));
+  const usedIds = new Set(
+    slides
+      .slice(1)
+      .map((s) => s.supportsArgument)
+      .filter((id) => supportingIds.has(id))
+  );
+  if (supportingIds.size >= 3 && usedIds.size < 2) {
+    findings.push('Supporting argument usage is too concentrated.');
+    score -= 12;
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  return { score, findings };
 }
 
 async function planSlidesFromText({ inputText, inputName, skillPath, maxSlides = 7 }) {
@@ -326,59 +635,136 @@ async function planSlidesFromText({ inputText, inputName, skillPath, maxSlides =
     'Follow the provided Freeport Slide Skill exactly.',
   ].join(' ');
 
-  const userPrompt = [
+  const outlinePrompt = [
     `Input name: ${inputName}`,
     '',
     'Freeport Slide Skill:',
     skillText,
     '',
+    'Pass 1 task: Create only the narrative structure.',
+    'Return JSON only with this schema:',
+    '{',
+    '  "deckTitle":"string",',
+    '  "deckSubtitle":"string",',
+    '  "mainAnswer":"string",',
+    '  "supportingArguments":[{"id":"A1","claim":"string"}],',
+    '  "slides":[{"index":1,"title":"string","pyramidRole":"executive_summary|supporting_logic|evidence|implication","supportsArgument":"A1|A2|A3|A4|ALL","layout":"summary_card|two_column|metrics|chart_bar|action_split","intent":"string"}]',
+    '}',
+    'Rules:',
+    '- Keep 5 to maxSlides total slides.',
+    '- Use only allowed enum values exactly as listed in schema.',
+    '- Lock one idea per slide.',
+    '- Enforce argument MECE and pyramid flow.',
+    '- Do not include bullets/metrics/chart/sourceRefs in pass 1.',
+    '',
     'Source text to transform into slides:',
     truncatedText,
     '',
-    `Return between 5 and ${maxSlides} content slides in the schema.`
+    `maxSlides=${maxSlides}`
   ].join('\n');
 
-  let lastValidationError = null;
-  let lastCandidate = null;
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  let outline = null;
+  let lastOutlineError = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     const attemptPrompt = attempt === 0
-      ? userPrompt
+      ? outlinePrompt
       : [
-          'Your previous JSON plan failed strict validation.',
-          'Repair it and return corrected JSON only.',
+          'Your previous outline failed validation. Repair it.',
           '',
           'Validation errors:',
-          lastValidationError?.message || '(unknown)',
+          lastOutlineError?.message || '(unknown)',
           '',
-          'Previous normalized JSON:',
-          JSON.stringify(lastCandidate, null, 2),
-          '',
-          'Keep the same factual grounding and source references.',
+          'Return corrected outline JSON only.',
         ].join('\n');
-
-    const raw = await requestAnthropicJson({
+    const raw = await requestAnthropicJsonWithOptions({
       apiKey,
       systemPrompt,
       userPrompt: attemptPrompt,
+      temperature: 0.1,
+      maxTokens: 2200,
     });
+    const parsed = safeJsonParse(raw);
+    const normalizedOutline = normalizeOutline(parsed, maxSlides);
+    try {
+      validateOutline(normalizedOutline, maxSlides);
+      outline = normalizedOutline;
+      break;
+    } catch (err) {
+      lastOutlineError = err;
+    }
+  }
+  if (!outline) {
+    throw new Error(`Outline generation failed.\n${lastOutlineError?.message || 'Unknown outline error.'}`);
+  }
 
-    const plan = safeJsonParse(raw);
-    const normalized = normalizePlan(plan, maxSlides);
-    lastCandidate = normalized;
+  const fullPlanPromptBase = [
+    `Input name: ${inputName}`,
+    '',
+    'Freeport Slide Skill:',
+    skillText,
+    '',
+    'Pass 2 task: Fill slide content using this LOCKED outline.',
+    'Do not change slide count, order, role, supportsArgument, or layout.',
+    'You may tighten wording for fit, but preserve each slide intent.',
+    '',
+    'LOCKED outline JSON:',
+    JSON.stringify(outline, null, 2),
+    '',
+    'Return final full-schema JSON only.',
+    '',
+    'Source text to transform into slides:',
+    truncatedText,
+  ].join('\n');
 
+  let lastValidationError = null;
+  let bestCandidate = null;
+  let bestScore = -1;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const attemptPrompt = attempt === 0
+      ? fullPlanPromptBase
+      : [
+          fullPlanPromptBase,
+          '',
+          'Your previous plan failed quality checks.',
+          'Repair and return corrected JSON only.',
+          '',
+          'Validation/quality feedback:',
+          lastValidationError?.message || '(none)',
+          '',
+          bestCandidate ? `Previous best score: ${bestScore}` : 'No previous valid candidate.',
+          bestCandidate ? JSON.stringify(bestCandidate, null, 2) : '',
+        ].join('\n');
+
+    const raw = await requestAnthropicJsonWithOptions({
+      apiKey,
+      systemPrompt,
+      userPrompt: attemptPrompt,
+      temperature: 0.15,
+      maxTokens: 3800,
+    });
+    const parsed = safeJsonParse(raw);
+    const normalized = normalizePlan(parsed, maxSlides);
     try {
       validatePlan(normalized);
-      return normalized;
+      const quality = scorePlanQuality(normalized);
+      if (quality.score > bestScore) {
+        bestScore = quality.score;
+        bestCandidate = normalized;
+      }
+      if (quality.score >= 82) {
+        return normalized;
+      }
+      lastValidationError = new Error(`Quality score ${quality.score} below threshold 82.\n- ${quality.findings.join('\n- ')}`);
     } catch (err) {
       lastValidationError = err;
-      if (attempt === 1) {
-        throw new Error(`Plan validation failed after retry.\n${err.message}`);
-      }
     }
   }
 
-  throw new Error('Unexpected planner retry flow failure.');
+  if (bestCandidate) {
+    return bestCandidate;
+  }
+
+  throw new Error(`Plan generation failed after retries.\n${lastValidationError?.message || 'Unknown planner failure.'}`);
 }
 
 module.exports = {
