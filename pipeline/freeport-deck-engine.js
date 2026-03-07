@@ -105,6 +105,7 @@ function hashText(value = '') {
 function chooseVariant(layout, model, slideIndex, previousVariantKey) {
   const catalog = {
     summary_card: ['summary_card', 'summary_band'],
+    reconciliation: ['reconciliation'],
     two_column: ['two_column', 'two_column_stagger'],
     metrics: ['metrics', 'metrics_strip'],
     chart_bar: ['chart_bar', 'chart_bar_focus'],
@@ -177,6 +178,120 @@ function addSummaryBand(slide, pres, model) {
   slide.addText(bulletRuns(right.length ? right : left), {
     x: sx(7.3), y: 4.45, w: 5.2, h: 2.15,
     ...textStyle('body'),
+  });
+}
+
+function addReconciliation(slide, pres, model) {
+  const metrics = Array.isArray(model.metrics) ? model.metrics.slice(0, 4) : [];
+  const bullets = listOrEmpty(model.bullets);
+  const leftBullets = listOrEmpty(model.leftBullets);
+  const rightBullets = listOrEmpty(model.rightBullets);
+
+  const strengthsTitle = model.leftTitle || 'What went well';
+  const improvementsTitle = model.rightTitle || 'What could improve';
+
+  const strengthsBulletsBase = leftBullets.length
+    ? leftBullets
+    : bullets.slice(0, Math.max(2, Math.ceil(bullets.length / 2)));
+  const improvementsBulletsBase = rightBullets.length
+    ? rightBullets
+    : bullets.slice(Math.max(2, Math.ceil(bullets.length / 2)));
+  const normalize = (s) => String(s || '').trim().toLowerCase();
+  const dedupe = (items) => {
+    const seen = new Set();
+    const out = [];
+    for (const item of items) {
+      const key = normalize(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+    return out;
+  };
+  const strengthsBullets = dedupe([
+    ...bullets.slice(0, 2),
+    ...strengthsBulletsBase,
+  ]);
+  const improvementsBullets = dedupe([
+    ...bullets.slice(2, 6),
+    ...improvementsBulletsBase,
+  ]);
+
+  const metricFallback = [
+    { label: 'KPI 1', value: '-', note: '' },
+    { label: 'KPI 2', value: '-', note: '' },
+    { label: 'KPI 3', value: '-', note: '' },
+    { label: 'KPI 4', value: '-', note: '' },
+  ];
+  const cards = (metrics.length ? metrics : metricFallback).slice(0, 4);
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: sx(0.9), y: 1.86, w: 12.0, h: 1.24,
+    ...shapeStyle('cardAlt'),
+  });
+  slide.addText(model.summary || (bullets[0] || ''), {
+    x: sx(1.2), y: 2.01, w: 11.4, h: 1.02,
+    ...textStyle('bodyLarge', { color: FREEPORT_THEME.colors.brandBlue, fontSize: 20 }),
+  });
+
+  const leftX = sx(0.9);
+  const leftW = 5.0;
+  const cardGapX = 0.2;
+  const cardGapY = 0.2;
+  const cardW = (leftW - cardGapX) / 2;
+  const cardH = 1.72;
+  const row1Y = 3.24;
+  const row2Y = row1Y + cardH + cardGapY;
+
+  cards.forEach((m, idx) => {
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const x = leftX + (col * (cardW + cardGapX));
+    const y = row === 0 ? row1Y : row2Y;
+    slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+      x, y, w: cardW, h: cardH,
+      ...shapeStyle('card'),
+    });
+    slide.addText(m.label || 'Metric', {
+      x: x + 0.2, y: y + 0.16, w: cardW - 0.4, h: 0.28,
+      ...textStyle('label', { fontSize: 11 }),
+    });
+    slide.addText(m.value || '-', {
+      x: x + 0.2, y: y + 0.55, w: cardW - 0.4, h: 0.52,
+      ...textStyle('contentTitle', { color: FREEPORT_THEME.colors.brandBlue, fontSize: 25 }),
+    });
+    slide.addText(m.note || '', {
+      x: x + 0.2, y: y + 1.12, w: cardW - 0.4, h: 0.45,
+      ...textStyle('body', { fontSize: 12 }),
+    });
+  });
+
+  const rightX = sx(6.1);
+  const rightW = 6.8;
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: rightX, y: 3.18, w: rightW, h: 1.93,
+    ...shapeStyle('card'),
+  });
+  slide.addText(strengthsTitle, {
+    x: rightX + 0.25, y: 3.36, w: rightW - 0.5, h: 0.38,
+    ...textStyle('cardHeading'),
+  });
+  slide.addText(bulletRuns(strengthsBullets.slice(0, 5)), {
+    x: rightX + 0.25, y: 3.82, w: rightW - 0.5, h: 1.16,
+    ...textStyle('body', { fontSize: 13, fit: 'shrink' }),
+  });
+
+  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
+    x: rightX, y: 5.25, w: rightW, h: 1.55,
+    ...shapeStyle('card'),
+  });
+  slide.addText(improvementsTitle, {
+    x: rightX + 0.25, y: 5.42, w: rightW - 0.5, h: 0.35,
+    ...textStyle('cardHeading', { color: FREEPORT_THEME.colors.brandBlue }),
+  });
+  slide.addText(bulletRuns(improvementsBullets.slice(0, 5)), {
+    x: rightX + 0.25, y: 5.83, w: rightW - 0.5, h: 0.88,
+    ...textStyle('body', { fontSize: 13, fit: 'shrink' }),
   });
 }
 
@@ -752,6 +867,7 @@ function addActionChecklist(slide, pres, model) {
 const LAYOUT_RENDERERS = {
   summary_card: addSummaryCard,
   summary_band: addSummaryBand,
+  reconciliation: addReconciliation,
   two_column: (slide, pres, model, ctx) => addTwoColumn(slide, pres, model, false, ctx),
   two_column_stagger: (slide, pres, model, ctx) => addTwoColumnStagger(slide, pres, model, false, ctx),
   two_column_image: addTwoColumnImage,
@@ -778,12 +894,16 @@ async function renderPlanToFreeportDeck({ plan, outputPath, imageAssets = null }
   for (let i = 0; i < plan.slides.length; i += 1) {
     const slideModel = plan.slides[i];
     const slide = addContentSlide(pres, { title: slideModel.title || 'Untitled' });
-    const slideImage = IMAGE_CAPABLE_LAYOUTS.has(slideModel.layout)
+    const explicitImage = slideModel?.image && slideModel.image.file ? slideModel.image : null;
+    const slideImage = explicitImage || (IMAGE_CAPABLE_LAYOUTS.has(slideModel.layout)
       ? selectImageForSlide(slideModel)
-      : null;
+      : null);
     let variantKey = chooseVariant(slideModel.layout, slideModel, i, previousVariantKey);
     if (slideModel.layout === 'two_column' && slideImage?.file) variantKey = 'two_column_image';
     if (slideModel.layout === 'chart_bar' && slideImage?.file) variantKey = 'chart_bar_image';
+    if (slideModel.layoutVariant && LAYOUT_RENDERERS[slideModel.layoutVariant]) {
+      variantKey = slideModel.layoutVariant;
+    }
     const renderer = LAYOUT_RENDERERS[variantKey] || LAYOUT_RENDERERS.summary_card;
     renderer(slide, pres, slideModel, { slideImage });
     previousVariantKey = variantKey;

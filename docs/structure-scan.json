@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-03-07T03:46:22.521Z",
+  "scannedAt": "2026-03-07T14:03:23.104Z",
   "root": "/Users/catronro/Documents/Codex/v2PresBuild",
   "files": {
     "pipeline": [
@@ -10,7 +10,9 @@
       "pipeline/load-env.js"
     ],
     "scripts": [
+      "scripts/build_template_backgrounds.py",
       "scripts/extract_input_text.py",
+      "scripts/generate-layout-corpus.js",
       "scripts/pdf_image_extractor.py",
       "scripts/qa_rendered_deck.py",
       "scripts/test-validator.js"
@@ -73,7 +75,7 @@
   "qualityGates": {
     "preRenderValidation": true,
     "postRenderQa": true,
-    "plannerRetry": true
+    "plannerRetry": false
   },
   "components": [
     {
@@ -129,11 +131,24 @@
         "ensureApiKey",
         "safeJsonParse",
         "requestAnthropicJson",
+        "requestAnthropicJsonWithOptions",
         "normalizePlan",
         "trimToWordBoundary",
         "dropDanglingEnding",
         "normalizeSlideTitle",
+        "normalizeOutline",
+        "normalizeRole",
+        "normalizeLayout",
+        "normalizeSupportRef",
+        "normalizeOutlineTitle",
+        "validateOutline",
+        "normalizeForDuplicateCheck",
+        "isAssertionTitle",
+        "coerceAssertionTitle",
+        "normalizeTitleForFit",
+        "applyLockedOutlineToPlan",
         "validatePlan",
+        "scorePlanQuality",
         "planSlidesFromText"
       ],
       "exports": [
@@ -151,7 +166,7 @@
         "ANTHROPIC_VERSION"
       ],
       "fetchEndpoint": "DEFAULT_BASE_URL/messages",
-      "hasRetryLoop": true
+      "hasRetryLoop": false
     },
     {
       "file": "pipeline/freeport-deck-engine.js",
@@ -166,6 +181,7 @@
         "chooseVariant",
         "addSummaryCard",
         "addSummaryBand",
+        "addReconciliation",
         "addTwoColumn",
         "addTwoColumnStagger",
         "addTwoColumnImage",
@@ -173,6 +189,7 @@
         "addMetricsStrip",
         "normalizeChartPayload",
         "shouldSplitKpiCharts",
+        "normalizeKpiPanelLabel",
         "addSplitKpiCharts",
         "addChartBar",
         "addChartBarFocus",

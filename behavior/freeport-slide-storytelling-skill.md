@@ -55,7 +55,7 @@ Return JSON only with this schema:
   ],
   "slides": [
     {
-      "layout": "summary_card | two_column | metrics | chart_bar | action_split",
+      "layout": "summary_card | reconciliation | two_column | metrics | chart_bar | action_split",
       "pyramidRole": "executive_summary | supporting_logic | evidence | implication",
       "supportsArgument": "A1 | A2 | A3 | A4 | ALL",
       "title": "string",
@@ -91,9 +91,9 @@ Required field behavior:
 
 ## 6) Layout Policy
 Hard mapping:
-- `executive_summary` -> `summary_card`
+- `executive_summary` -> `summary_card` or `reconciliation`
 - `supporting_logic` -> `metrics` or `two_column`
-- `evidence` -> `chart_bar` or `two_column`
+- `evidence` -> `chart_bar` or `two_column` or `reconciliation`
 - `implication` -> `action_split`
 - Do not use `chart_bar` unless source contains numeric comparisons.
 
@@ -103,6 +103,7 @@ Soft layout guidance:
 
 Soft per-layout guidance:
 - `summary_card`: one large card with 4-6 bullets.
+- `reconciliation`: top reconciliation summary, 4 KPI cards on left, and right-side split of strengths vs. improvements.
 - `two_column`: comparison or design vs execution, 3-5 bullets per side.
 - `metrics`: 3-5 metric cards with value + short note.
 - `chart_bar`: 2-4 categories, up to 3 series, plus 3-4 readout bullets.

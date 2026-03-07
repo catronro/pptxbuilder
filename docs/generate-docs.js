@@ -13,6 +13,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const { generateLayoutCorpus } = require('../scripts/generate-layout-corpus');
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,7 @@ const OUT = {
   flowMd: path.join(DOCS_DIR, 'solution-flow.md'),
   overviewMd: path.join(DOCS_DIR, 'solution-overview.md'),
   envSetupMd: path.join(DOCS_DIR, 'environment-setup.md'),
+  layoutCorpusPptx: path.join(DOCS_DIR, 'layout-corpus.pptx'),
 };
 
 const KEY = {
@@ -390,6 +392,7 @@ function buildOverviewMarkdown(scan) {
     '- `docs/solution-flow.md` (diagram page)',
     '- `docs/solution-overview.md` (this narrative)',
     '- `docs/environment-setup.md` (environment setup guide)',
+    '- `docs/layout-corpus.pptx` (all renderer layout variations for visual QA)',
     '',
     '## Refresh Command',
     '```bash',
@@ -498,6 +501,11 @@ async function main() {
   await fs.writeFile(OUT.flowMd, buildFlowMarkdown(scan), 'utf8');
   await fs.writeFile(OUT.overviewMd, buildOverviewMarkdown(scan), 'utf8');
   await fs.writeFile(OUT.envSetupMd, buildEnvironmentSetupMarkdown(scan), 'utf8');
+  await generateLayoutCorpus({
+    outputPath: OUT.layoutCorpusPptx,
+    writePlan: false,
+    writeImageManifest: false,
+  });
 
   // eslint-disable-next-line no-console
   console.log('Documentation generated from live scan:');
