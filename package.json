@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "generate:freeport": "node pipeline/generate-freeport-deck.js",
+    "generate:layout-corpus": "node scripts/generate-layout-corpus.js",
     "test:validator": "node scripts/test-validator.js",
     "docs:generate": "node docs/generate-docs.js"
   },

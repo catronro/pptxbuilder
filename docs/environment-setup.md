@@ -1,6 +1,6 @@
 # Environment Setup (New Machine)
 
-Generated from live scan: 2026-03-07T03:46:22.521Z
+Generated from live scan: 2026-03-07T14:03:23.104Z
 
 ## 1. Prerequisites
 - Node.js 20+ and npm

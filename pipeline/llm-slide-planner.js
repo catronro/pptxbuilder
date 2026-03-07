@@ -18,12 +18,12 @@ const DEFAULT_BASE_URL = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropi
 const ANTHROPIC_VERSION = process.env.ANTHROPIC_VERSION || '2023-06-01';
 const MAX_TITLE_WORDS = 14;
 const MAX_TITLE_CHARS = 85;
-const ALLOWED_LAYOUTS = new Set(['summary_card', 'two_column', 'metrics', 'chart_bar', 'action_split']);
+const ALLOWED_LAYOUTS = new Set(['summary_card', 'reconciliation', 'two_column', 'metrics', 'chart_bar', 'action_split']);
 const ALLOWED_ROLES = new Set(['executive_summary', 'supporting_logic', 'evidence', 'implication']);
 const ROLE_LAYOUT_MAP = {
-  executive_summary: new Set(['summary_card']),
+  executive_summary: new Set(['summary_card', 'reconciliation']),
   supporting_logic: new Set(['metrics', 'two_column']),
-  evidence: new Set(['chart_bar', 'two_column']),
+  evidence: new Set(['chart_bar', 'two_column', 'reconciliation']),
   implication: new Set(['action_split']),
 };
 
@@ -147,38 +147,53 @@ function normalizePlan(plan, maxSlides) {
     return title;
   }
 
-  normalized.slides = normalized.slides.map((s, i) => ({
-    layout: String(s.layout || 'summary_card'),
-    pyramidRole: String(s.pyramidRole || ''),
-    supportsArgument: String(s.supportsArgument || ''),
-    title: normalizeSlideTitle(s.title, `Slide ${i + 1}`),
-    summary: s.summary ? String(s.summary) : '',
-    sourceRefs: Array.isArray(s.sourceRefs) ? s.sourceRefs.map(String).slice(0, 3) : [],
-    bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : [],
-    leftTitle: s.leftTitle ? String(s.leftTitle) : '',
-    leftBullets: Array.isArray(s.leftBullets) ? s.leftBullets.map(String) : [],
-    rightTitle: s.rightTitle ? String(s.rightTitle) : '',
-    rightBullets: Array.isArray(s.rightBullets) ? s.rightBullets.map(String) : [],
-    metrics: Array.isArray(s.metrics)
-      ? s.metrics.map((m) => ({
-          label: String(m.label || ''),
-          value: String(m.value || ''),
-          note: String(m.note || ''),
-        }))
-      : [],
-    chart: s.chart && typeof s.chart === 'object'
-      ? {
-          title: String(s.chart.title || ''),
-          categories: Array.isArray(s.chart.categories) ? s.chart.categories.map(String) : [],
-          series: Array.isArray(s.chart.series)
-            ? s.chart.series.map((x) => ({
-                name: String(x.name || ''),
-                values: Array.isArray(x.values) ? x.values.map((n) => Number(n) || 0) : [],
-              }))
-            : [],
-        }
-      : null,
-  }));
+  normalized.slides = normalized.slides.map((s, i) => {
+    const slide = {
+      layout: String(s.layout || 'summary_card'),
+      pyramidRole: String(s.pyramidRole || ''),
+      supportsArgument: String(s.supportsArgument || ''),
+      title: normalizeSlideTitle(s.title, `Slide ${i + 1}`),
+      summary: s.summary ? String(s.summary) : '',
+      sourceRefs: Array.isArray(s.sourceRefs) ? s.sourceRefs.map(String).slice(0, 3) : [],
+      bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : [],
+      leftTitle: s.leftTitle ? String(s.leftTitle) : '',
+      leftBullets: Array.isArray(s.leftBullets) ? s.leftBullets.map(String) : [],
+      rightTitle: s.rightTitle ? String(s.rightTitle) : '',
+      rightBullets: Array.isArray(s.rightBullets) ? s.rightBullets.map(String) : [],
+      metrics: Array.isArray(s.metrics)
+        ? s.metrics.map((m) => ({
+            label: String(m.label || ''),
+            value: String(m.value || ''),
+            note: String(m.note || ''),
+          }))
+        : [],
+      chart: s.chart && typeof s.chart === 'object'
+        ? {
+            title: String(s.chart.title || ''),
+            categories: Array.isArray(s.chart.categories) ? s.chart.categories.map(String) : [],
+            series: Array.isArray(s.chart.series)
+              ? s.chart.series.map((x) => ({
+                  name: String(x.name || ''),
+                  values: Array.isArray(x.values) ? x.values.map((n) => Number(n) || 0) : [],
+                }))
+              : [],
+          }
+        : null,
+    };
+
+    if (slide.layout === 'reconciliation') {
+      if (slide.leftBullets.length || slide.rightBullets.length) {
+        // Avoid forcing duplicate narrative in generic bullets when section bullets exist.
+        slide.bullets = [];
+      } else if (slide.bullets.length >= 4) {
+        const splitAt = Math.ceil(slide.bullets.length / 2);
+        slide.leftBullets = slide.bullets.slice(0, splitAt);
+        slide.rightBullets = slide.bullets.slice(splitAt);
+        slide.bullets = [];
+      }
+    }
+    return slide;
+  });
 
   return normalized;
 }
@@ -202,6 +217,7 @@ function normalizeOutline(outline, maxSlides) {
     const raw = String(layout || '').trim().toLowerCase();
     if (ALLOWED_LAYOUTS.has(raw)) return raw;
     if (raw === 'executive_summary' || raw === 'summary') return 'summary_card';
+    if (raw === 'reconciliation' || raw === 'recon' || raw === 'summary_reconciliation') return 'reconciliation';
     if (raw === 'text_and_chart' || raw === 'chart') {
       return normalizeRole(role) === 'supporting_logic' ? 'metrics' : 'chart_bar';
     }
@@ -300,7 +316,9 @@ function normalizeOutline(outline, maxSlides) {
   });
   if (normalized.slides[0]) {
     normalized.slides[0].pyramidRole = 'executive_summary';
-    normalized.slides[0].layout = 'summary_card';
+    if (!ROLE_LAYOUT_MAP.executive_summary.has(normalized.slides[0].layout)) {
+      normalized.slides[0].layout = 'summary_card';
+    }
   }
   if (normalized.slides[normalized.slides.length - 1]) {
     normalized.slides[normalized.slides.length - 1].pyramidRole = 'implication';
@@ -384,6 +402,40 @@ function normalizeForDuplicateCheck(text) {
     .trim();
 }
 
+function normalizeKpiLabel(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\b(actual|planned|optimal|target|avg|average|vs)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractMetricLabelSet(slides = []) {
+  const out = new Set();
+  for (const slide of slides) {
+    const metrics = Array.isArray(slide?.metrics) ? slide.metrics : [];
+    for (const m of metrics) {
+      const key = normalizeKpiLabel(m?.label || '');
+      if (key) out.add(key);
+    }
+  }
+  return out;
+}
+
+function overlapRatio(aSet, bSet) {
+  const a = Array.from(aSet || []);
+  const b = Array.from(bSet || []);
+  if (!a.length || !b.length) return 0;
+  const bLookup = new Set(b);
+  let overlap = 0;
+  for (const x of a) {
+    if (bLookup.has(x)) overlap += 1;
+  }
+  return overlap / Math.max(1, Math.min(a.length, b.length));
+}
+
 function isAssertionTitle(title) {
   const t = String(title || '').trim();
   if (!t) return false;
@@ -440,7 +492,9 @@ function applyLockedOutlineToPlan(plan, outline) {
   }
   if (plan.slides[0]) {
     plan.slides[0].pyramidRole = 'executive_summary';
-    plan.slides[0].layout = 'summary_card';
+    if (!ROLE_LAYOUT_MAP.executive_summary.has(plan.slides[0].layout)) {
+      plan.slides[0].layout = 'summary_card';
+    }
   }
   if (plan.slides[plan.slides.length - 1]) {
     plan.slides[plan.slides.length - 1].pyramidRole = 'implication';
@@ -560,6 +614,21 @@ function validatePlan(plan) {
         }
       }
     }
+    if (s.layout === 'reconciliation') {
+      const metricCount = Array.isArray(s.metrics) ? s.metrics.filter((m) => m && (m.label || m.value || m.note)).length : 0;
+      if (metricCount < 3) {
+        issues.push(`Slide ${n}: reconciliation requires at least 3 populated metrics.`);
+      }
+      const leftCount = Array.isArray(s.leftBullets) ? s.leftBullets.filter(Boolean).length : 0;
+      const rightCount = Array.isArray(s.rightBullets) ? s.rightBullets.filter(Boolean).length : 0;
+      const totalBullets = Array.isArray(s.bullets) ? s.bullets.filter(Boolean).length : 0;
+      if ((leftCount < 2 || rightCount < 2) && totalBullets < 4) {
+        issues.push(`Slide ${n}: reconciliation needs either split bullets (2+ per side) or 4+ bullets total.`);
+      }
+      if (!s.summary || !String(s.summary).trim()) {
+        issues.push(`Slide ${n}: reconciliation requires summary text.`);
+      }
+    }
 
     const bulletBuckets = [
       ...(Array.isArray(s.bullets) ? s.bullets : []),
@@ -632,6 +701,8 @@ function scorePlanQuality(plan) {
     return acc;
   }, {});
   const titles = slides.map((s) => String(s.title || '').trim()).filter(Boolean);
+  const reconSlides = slides.filter((s) => s.layout === 'reconciliation');
+  const metricsSlides = slides.filter((s) => s.layout === 'metrics');
   const normTitles = new Set();
   for (const t of titles) {
     const key = normalizeForDuplicateCheck(t);
@@ -706,9 +777,20 @@ function scorePlanQuality(plan) {
     (Array.isArray(s.metrics) && s.metrics.some((m) => /[0-9]/.test(`${m.value || ''}${m.note || ''}`))) ||
     (s.chart && Array.isArray(s.chart.series) && s.chart.series.some((sr) => Array.isArray(sr.values) && sr.values.some((v) => Number(v) !== 0)))
   );
-  if (hasNumericKpis && !(byLayout.metrics > 0)) {
-    findings.push('Numeric KPI signal is present; consider one metrics slide.');
+  const hasKpiCardVisual = (byLayout.metrics || 0) > 0 || reconSlides.length > 0;
+  if (hasNumericKpis && !hasKpiCardVisual) {
+    findings.push('Numeric KPI signal is present; consider one KPI-card visual (metrics or reconciliation).');
     score -= 7;
+  }
+
+  if (reconSlides.length > 0 && metricsSlides.length > 0) {
+    const reconLabels = extractMetricLabelSet(reconSlides);
+    const metricLabels = extractMetricLabelSet(metricsSlides);
+    const kpiOverlap = overlapRatio(reconLabels, metricLabels);
+    if (kpiOverlap >= 0.5) {
+      findings.push('reconciliation and metrics slides appear to repeat the same KPI set.');
+      score -= 10;
+    }
   }
 
   const hasPlannedActual = slides.some((s) => {
@@ -749,7 +831,7 @@ async function planSlidesFromText({ inputText, inputName, skillPath, maxSlides =
     '  "deckSubtitle":"string",',
     '  "mainAnswer":"string",',
     '  "supportingArguments":[{"id":"A1","claim":"string"}],',
-    '  "slides":[{"index":1,"title":"string","pyramidRole":"executive_summary|supporting_logic|evidence|implication","supportsArgument":"A1|A2|A3|A4|ALL","layout":"summary_card|two_column|metrics|chart_bar|action_split","intent":"string"}]',
+    '  "slides":[{"index":1,"title":"string","pyramidRole":"executive_summary|supporting_logic|evidence|implication","supportsArgument":"A1|A2|A3|A4|ALL","layout":"summary_card|reconciliation|two_column|metrics|chart_bar|action_split","intent":"string"}]',
     '}',
     'Rules:',
     '- Keep 5 to maxSlides total slides.',
