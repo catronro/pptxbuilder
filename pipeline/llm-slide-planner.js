@@ -256,7 +256,7 @@ function normalizeOutline(outline, maxSlides) {
     return title.replace(/[,;:\-–—]\s*$/, '').replace(/\.\s*$/, '').trim();
   }
 
-  return {
+  const normalized = {
     deckTitle: String(outline.deckTitle || 'Generated Narrative Deck'),
     deckSubtitle: String(outline.deckSubtitle || 'LLM-generated outline'),
     mainAnswer: String(outline.mainAnswer || ''),
@@ -272,6 +272,41 @@ function normalizeOutline(outline, maxSlides) {
         }))
       : [],
   };
+
+  const roleRank = {
+    executive_summary: 0,
+    supporting_logic: 1,
+    evidence: 2,
+    implication: 3,
+  };
+  let lastRank = -1;
+  normalized.slides = normalized.slides.map((s, idx) => {
+    let role = s.pyramidRole;
+    let rank = roleRank[role];
+    if (!Number.isFinite(rank)) {
+      role = idx === 0 ? 'executive_summary' : 'supporting_logic';
+      rank = roleRank[role];
+    }
+    if (rank < lastRank) {
+      role = Object.keys(roleRank).find((k) => roleRank[k] === lastRank) || role;
+      rank = roleRank[role];
+    }
+    lastRank = rank;
+    let layout = s.layout;
+    if (!ROLE_LAYOUT_MAP[role]?.has(layout)) {
+      layout = Array.from(ROLE_LAYOUT_MAP[role] || ['summary_card'])[0];
+    }
+    return { ...s, pyramidRole: role, layout };
+  });
+  if (normalized.slides[0]) {
+    normalized.slides[0].pyramidRole = 'executive_summary';
+    normalized.slides[0].layout = 'summary_card';
+  }
+  if (normalized.slides[normalized.slides.length - 1]) {
+    normalized.slides[normalized.slides.length - 1].pyramidRole = 'implication';
+    normalized.slides[normalized.slides.length - 1].layout = 'action_split';
+  }
+  return normalized;
 }
 
 function validateOutline(outline, maxSlides) {
@@ -357,6 +392,63 @@ function isAssertionTitle(title) {
   return verbHint.test(t) || /%|\$|[0-9]/.test(t);
 }
 
+function coerceAssertionTitle(slide) {
+  const pick = [
+    slide?.title || '',
+    slide?.summary || '',
+    ...(Array.isArray(slide?.bullets) ? slide.bullets : []),
+    ...(Array.isArray(slide?.leftBullets) ? slide.leftBullets : []),
+    ...(Array.isArray(slide?.rightBullets) ? slide.rightBullets : []),
+  ].map((x) => String(x || '').trim()).filter(Boolean);
+
+  for (const candidate of pick) {
+    if (isAssertionTitle(candidate)) return candidate;
+  }
+  const first = pick[0] || 'This slide provides evidence for the main recommendation.';
+  return `Data indicates ${first}`.trim();
+}
+
+function normalizeTitleForFit(rawTitle, fallback = 'Slide') {
+  let title = String(rawTitle || fallback || '').replace(/\s+/g, ' ').trim();
+  if (!title) return fallback;
+  const words = title.split(/\s+/);
+  if (words.length > MAX_TITLE_WORDS) {
+    title = words.slice(0, MAX_TITLE_WORDS).join(' ');
+  }
+  if (title.length > MAX_TITLE_CHARS) {
+    const cut = title.slice(0, MAX_TITLE_CHARS);
+    title = cut.replace(/\s+\S*$/, '').trim();
+  }
+  return title.replace(/[,;:\-–—]\s*$/, '').replace(/\.\s*$/, '').trim();
+}
+
+function applyLockedOutlineToPlan(plan, outline) {
+  if (!plan || !outline || !Array.isArray(plan.slides) || !Array.isArray(outline.slides)) {
+    return plan;
+  }
+  const count = Math.min(plan.slides.length, outline.slides.length);
+  for (let i = 0; i < count; i += 1) {
+    const locked = outline.slides[i] || {};
+    const slide = plan.slides[i] || {};
+    if (locked.layout) slide.layout = locked.layout;
+    if (locked.pyramidRole) slide.pyramidRole = locked.pyramidRole;
+    if (i > 0 && locked.supportsArgument) slide.supportsArgument = locked.supportsArgument;
+    if (!isAssertionTitle(slide.title)) {
+      slide.title = normalizeTitleForFit(coerceAssertionTitle(slide), `Slide ${i + 1}`);
+    }
+    plan.slides[i] = slide;
+  }
+  if (plan.slides[0]) {
+    plan.slides[0].pyramidRole = 'executive_summary';
+    plan.slides[0].layout = 'summary_card';
+  }
+  if (plan.slides[plan.slides.length - 1]) {
+    plan.slides[plan.slides.length - 1].pyramidRole = 'implication';
+    plan.slides[plan.slides.length - 1].layout = 'action_split';
+  }
+  return plan;
+}
+
 function validatePlan(plan) {
   const issues = [];
   const slides = plan.slides || [];
@@ -398,37 +490,10 @@ function validatePlan(plan) {
   }
 
   const contentSlides = slides.slice(1);
-  const contentCount = contentSlides.length || 1;
   const byLayout = contentSlides.reduce((acc, s) => {
     acc[s.layout] = (acc[s.layout] || 0) + 1;
     return acc;
   }, {});
-
-  const distinctLayouts = Object.keys(byLayout).length;
-  if (distinctLayouts < 3) {
-    issues.push('Layout diversity failed: use at least 3 distinct layouts across content slides.');
-  }
-
-  const twoColumnCount = byLayout.two_column || 0;
-  if (twoColumnCount > Math.floor(contentCount / 2)) {
-    issues.push('Layout diversity failed: `two_column` exceeds 50% of content slides.');
-  }
-
-  const hasNumericKpis = slides.some((s) =>
-    (Array.isArray(s.metrics) && s.metrics.some((m) => /[0-9]/.test(`${m.value || ''}${m.note || ''}`))) ||
-    (s.chart && Array.isArray(s.chart.series) && s.chart.series.some((sr) => Array.isArray(sr.values) && sr.values.some((v) => Number(v) !== 0)))
-  );
-  if (hasNumericKpis && !(byLayout.metrics > 0)) {
-    issues.push('Layout diversity failed: numeric KPI content detected but no `metrics` slide present.');
-  }
-
-  const hasPlannedActual = slides.some((s) => {
-    const txt = `${s.title || ''} ${s.summary || ''} ${(s.bullets || []).join(' ')}`.toLowerCase();
-    return txt.includes('planned') && txt.includes('actual');
-  });
-  if (hasPlannedActual && !(byLayout.chart_bar > 0)) {
-    issues.push('Layout diversity failed: planned vs actual content detected but no `chart_bar` slide present.');
-  }
 
   slides.forEach((s, idx) => {
     const n = idx + 1;
@@ -560,6 +625,12 @@ function scorePlanQuality(plan) {
   const findings = [];
   let score = 100;
   const slides = plan.slides || [];
+  const contentSlides = slides.slice(1);
+  const contentCount = contentSlides.length || 1;
+  const byLayout = contentSlides.reduce((acc, s) => {
+    acc[s.layout] = (acc[s.layout] || 0) + 1;
+    return acc;
+  }, {});
   const titles = slides.map((s) => String(s.title || '').trim()).filter(Boolean);
   const normTitles = new Set();
   for (const t of titles) {
@@ -617,6 +688,36 @@ function scorePlanQuality(plan) {
   if (supportingIds.size >= 3 && usedIds.size < 2) {
     findings.push('Supporting argument usage is too concentrated.');
     score -= 12;
+  }
+
+  const distinctLayouts = Object.keys(byLayout).length;
+  if (distinctLayouts < 3) {
+    findings.push('Layout diversity is low; target 3+ layouts when natural.');
+    score -= 8;
+  }
+
+  const twoColumnCount = byLayout.two_column || 0;
+  if (twoColumnCount > Math.floor(contentCount * 0.7)) {
+    findings.push('two_column usage is high and may reduce visual variety.');
+    score -= 6;
+  }
+
+  const hasNumericKpis = slides.some((s) =>
+    (Array.isArray(s.metrics) && s.metrics.some((m) => /[0-9]/.test(`${m.value || ''}${m.note || ''}`))) ||
+    (s.chart && Array.isArray(s.chart.series) && s.chart.series.some((sr) => Array.isArray(sr.values) && sr.values.some((v) => Number(v) !== 0)))
+  );
+  if (hasNumericKpis && !(byLayout.metrics > 0)) {
+    findings.push('Numeric KPI signal is present; consider one metrics slide.');
+    score -= 7;
+  }
+
+  const hasPlannedActual = slides.some((s) => {
+    const txt = `${s.title || ''} ${s.summary || ''} ${(s.bullets || []).join(' ')}`.toLowerCase();
+    return txt.includes('planned') && txt.includes('actual');
+  });
+  if (hasPlannedActual && !(byLayout.chart_bar > 0)) {
+    findings.push('Planned-vs-actual signal exists; consider at least one chart_bar slide.');
+    score -= 5;
   }
 
   score = Math.max(0, Math.min(100, score));
@@ -743,7 +844,8 @@ async function planSlidesFromText({ inputText, inputName, skillPath, maxSlides =
       maxTokens: 3800,
     });
     const parsed = safeJsonParse(raw);
-    const normalized = normalizePlan(parsed, maxSlides);
+    const locked = applyLockedOutlineToPlan(parsed, outline);
+    const normalized = normalizePlan(locked, maxSlides);
     try {
       validatePlan(normalized);
       const quality = scorePlanQuality(normalized);

@@ -97,11 +97,9 @@ Hard mapping:
 - `implication` -> `action_split`
 - Do not use `chart_bar` unless source contains numeric comparisons.
 
-Hard diversity constraints:
-- Use at least 3 distinct layouts across content slides.
-- `two_column` must not exceed 50% of content slides.
-- Use `metrics` at least once when numeric KPIs are present.
-- Use `chart_bar` at least once when planned vs actual comparisons are present.
+Soft layout guidance:
+- Value diversity in slide layouts, target 3+ layouts when natural.
+- Prefer 1 `metrics` slide when KPI signal is strong.
 
 Soft per-layout guidance:
 - `summary_card`: one large card with 4-6 bullets.
