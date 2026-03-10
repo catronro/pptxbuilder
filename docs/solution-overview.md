@@ -1,6 +1,6 @@
 # Solution Overview (New Developer Guide)
 
-Generated from live scan: 2026-03-07T14:03:23.104Z
+Generated from live scan: 2026-03-10T03:03:29.449Z
 
 ## What This System Does
 This system builds Freeport-branded PowerPoint decks from either raw source input or an existing plan file.

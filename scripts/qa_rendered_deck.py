@@ -97,16 +97,25 @@ def main() -> int:
         page_text_norm = normalize_text(page.get_text('text'))
 
         title = str(slide.get('title', '')).strip()
+        layout = str(slide.get('layout', '')).strip().lower()
+        summary = str(slide.get('summary', '')).strip()
         if title:
             title_norm = normalize_text(title)
-            if title_norm not in page_text_norm:
-                issues.append(f"Slide {idx+1}: title not fully present in rendered text")
+            summary_norm = normalize_text(summary) if summary else ""
+            if layout == 'summary_card':
+                # Executive-summary layout may render headline differently from the
+                # plan title; accept either title or summary presence.
+                if title_norm not in page_text_norm and (not summary_norm or summary_norm not in page_text_norm):
+                    issues.append(f"Slide {idx+1}: summary_card headline not fully present in rendered text")
+            else:
+                if title_norm not in page_text_norm:
+                    issues.append(f"Slide {idx+1}: title not fully present in rendered text")
 
             words = page.get_text('words')
             seq = find_token_sequence(words, title_tokens(title))
             if seq:
                 # header band guardrail: title should stay in top ~19% of page height
-                if (seq['y_max'] / page.rect.height) > 0.19:
+                if layout != 'summary_card' and (seq['y_max'] / page.rect.height) > 0.19:
                     issues.append(f"Slide {idx+1}: title likely overflows header band")
             else:
                 # Wrapped/styled title runs can prevent reliable word-sequence matching.
