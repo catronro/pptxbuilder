@@ -4,6 +4,7 @@ const pptxgen = require('pptxgenjs');
 const FREEPORT_MASTERS = {
   TITLE: 'FREEPORT_TITLE',
   CONTENT: 'FREEPORT_CONTENT',
+  EXEC_SUMMARY: 'FREEPORT_EXEC_SUMMARY',
 };
 
 const FREEPORT_THEME = {
@@ -33,6 +34,8 @@ const FREEPORT_THEME = {
     subtitleBox: { x: 0.75, y: 3.90, w: 5.6, h: 0.6 },
     contentTitleBox: { x: 0.253, y: 0.21, w: 8.95, h: 1.12 },
     contentBodyBox: { x: 0.258, y: 2.03, w: 12.732, h: 4.43 },
+    executiveSummaryLeftBox: { x: 0.17, y: 2.2, w: 4.45, h: 3.1 },
+    executiveSummaryRightBox: { x: 5.18, y: 1.15, w: 7.68, h: 6.05 },
     slideNumberPatch: { x: 13.22, y: 7.35, w: 0.11, h: 0.13 },
   },
   textStyles: {
@@ -40,6 +43,8 @@ const FREEPORT_THEME = {
     titleSlideSubtitle: { fontFace: 'Arial', fontSize: 20, color: 'FFFFFF', align: 'left', margin: 0 },
     contentTitle: { fontFace: 'Arial', bold: true, fontSize: 28, color: 'FFFFFF', margin: 0 },
     contentBody: { fontFace: 'Arial', fontSize: 28, color: '092033', margin: 0.08 },
+    executiveSummaryHeadline: { fontFace: 'Arial', bold: false, fontSize: 33, color: '000000', align: 'left', valign: 'mid', margin: 0 },
+    executiveSummaryBullets: { fontFace: 'Arial', fontSize: 24, color: '334155', valign: 'top', margin: 0 },
     cardHeading: { fontFace: 'Arial', fontSize: 20, bold: true, color: '092033', margin: 0 },
     body: { fontFace: 'Arial', fontSize: 15, color: '334155', valign: 'top', margin: 0 },
     centeredCallout: { fontFace: 'Arial Black', fontSize: 25, charSpacing: 2, color: '007FB0', align: 'center', valign: 'middle', margin: 0 },
@@ -159,6 +164,21 @@ function createFreeportPresentation() {
       },
     ],
   });
+  pres.defineSlideMaster({
+    title: FREEPORT_MASTERS.EXEC_SUMMARY,
+    background: { color: FREEPORT_THEME.colors.white },
+    objects: [
+      {
+        image: {
+          path: asset('bg-executive-summary-master.png'),
+          x: 0,
+          y: 0,
+          w: 13.333,
+          h: 7.5,
+        },
+      },
+    ],
+  });
   return pres;
 }
 
@@ -210,6 +230,12 @@ function addContentSlide(pres, { title, body } = {}) {
   return slide;
 }
 
+function addExecutiveSummarySlide(pres) {
+  const slide = pres.addSlide({ masterName: FREEPORT_MASTERS.EXEC_SUMMARY });
+  applyContentBackground(slide, pres, pres._slides.length);
+  return slide;
+}
+
 module.exports = {
   FREEPORT_MASTERS,
   FREEPORT_THEME,
@@ -219,4 +245,5 @@ module.exports = {
   createFreeportPresentation,
   addTitleSlide,
   addContentSlide,
+  addExecutiveSummarySlide,
 };

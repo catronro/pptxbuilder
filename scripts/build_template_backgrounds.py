@@ -218,6 +218,8 @@ def build_backgrounds(
     content_slide: int,
     title_name: str,
     content_name: str,
+    third_slide: Optional[int] = None,
+    third_name: Optional[str] = None,
 ) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,15 +228,22 @@ def build_backgrounds(
         tmp_pptx = tmp_dir / input_pptx.name
         shutil.copy2(input_pptx, tmp_pptx)
 
-        cleared = _clear_placeholder_prompts(tmp_pptx, [title_slide, content_slide])
+        slide_targets = [title_slide, content_slide]
+        if third_slide is not None:
+            slide_targets.append(third_slide)
+        cleared = _clear_placeholder_prompts(tmp_pptx, slide_targets)
         pdf_path = _convert_pptx_to_pdf(tmp_pptx, tmp_dir)
 
         title_png = output_dir / title_name
         content_png = output_dir / content_name
         _render_pdf_page_to_png(pdf_path, title_slide, title_png)
         _render_pdf_page_to_png(pdf_path, content_slide, content_png)
+        third_png = None
+        if third_slide is not None and third_name:
+            third_png = output_dir / third_name
+            _render_pdf_page_to_png(pdf_path, third_slide, third_png)
 
-    return {
+    result = {
         "input": str(input_pptx),
         "outputDir": str(output_dir),
         "titleSlide": title_slide,
@@ -243,6 +252,10 @@ def build_backgrounds(
         "contentBackground": str(content_png),
         "placeholderPromptsCleared": cleared,
     }
+    if third_slide is not None and third_name and third_png is not None:
+        result["thirdSlide"] = third_slide
+        result["thirdBackground"] = str(third_png)
+    return result
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -257,6 +270,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--content-slide", type=int, default=2, help="1-based slide number for content master capture")
     parser.add_argument("--title-name", default="bg-title-master.png", help="Output filename for title background")
     parser.add_argument("--content-name", default="bg-content-master.png", help="Output filename for content background")
+    parser.add_argument("--third-slide", type=int, default=None, help="Optional 1-based slide number for third master capture")
+    parser.add_argument("--third-name", default="bg-reconciliation-master.png", help="Output filename for third background")
     return parser.parse_args(argv)
 
 
@@ -280,6 +295,8 @@ def main(argv: list[str]) -> int:
             content_slide=args.content_slide,
             title_name=args.title_name,
             content_name=args.content_name,
+            third_slide=args.third_slide,
+            third_name=args.third_name,
         )
     except Exception as exc:
         print(f"Template background build failed: {exc}", file=sys.stderr)

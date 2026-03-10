@@ -99,7 +99,7 @@ function buildCorpusPlan() {
   const variants = [
     { layout: 'summary_card', variant: 'summary_card' },
     { layout: 'summary_card', variant: 'summary_band' },
-    { layout: 'summary_card', variant: 'reconciliation' },
+    { layout: 'reconciliation', variant: 'reconciliation' },
     { layout: 'two_column', variant: 'two_column' },
     { layout: 'two_column', variant: 'two_column_stagger' },
     { layout: 'two_column', variant: 'two_column_image', sourceRefs: ['PAGE 1: drill cluster image'] },

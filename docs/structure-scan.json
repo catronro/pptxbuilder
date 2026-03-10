@@ -1,5 +1,5 @@
 {
-  "scannedAt": "2026-03-07T14:03:23.104Z",
+  "scannedAt": "2026-03-10T03:03:29.449Z",
   "root": "/Users/catronro/Documents/Codex/v2PresBuild",
   "files": {
     "pipeline": [
@@ -143,6 +143,9 @@
         "normalizeOutlineTitle",
         "validateOutline",
         "normalizeForDuplicateCheck",
+        "normalizeKpiLabel",
+        "extractMetricLabelSet",
+        "overlapRatio",
         "isAssertionTitle",
         "coerceAssertionTitle",
         "normalizeTitleForFit",
@@ -174,11 +177,16 @@
         "sx",
         "joinedBullets",
         "bulletRuns",
+        "bulletRunsSpaced",
+        "addDistributedBulletTextBoxes",
         "splitBullets",
         "listOrEmpty",
         "addCardImage",
         "hashText",
         "chooseVariant",
+        "resolveMasterByLayout",
+        "addSlideForLayout",
+        "isVariantCompatibleWithLayout",
         "addSummaryCard",
         "addSummaryBand",
         "addReconciliation",

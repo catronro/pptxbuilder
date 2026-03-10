@@ -12,6 +12,7 @@
  */
 const path = require('node:path');
 const {
+  FREEPORT_MASTERS,
   FREEPORT_THEME,
   textStyle,
   shapeStyle,
@@ -19,6 +20,7 @@ const {
   createFreeportPresentation,
   addTitleSlide,
   addContentSlide,
+  addExecutiveSummarySlide,
 } = require('../behavior/freeport-slide-styleguide');
 const { buildImageSelector } = require('./image-matcher');
 
@@ -43,6 +45,46 @@ function bulletRuns(items = []) {
       breakLine: idx < clean.length - 1,
     },
   }));
+}
+
+function bulletRunsSpaced(items = [], paraSpaceAfterPt = 18) {
+  const clean = items.filter(Boolean).slice(0, 8);
+  return clean.map((text, idx) => ({
+    text: String(text),
+    options: {
+      bullet: { indent: FREEPORT_THEME.listStyles.bullet.indentPt },
+      paraSpaceAfterPt,
+      breakLine: idx < clean.length - 1,
+    },
+  }));
+}
+
+function addDistributedBulletTextBoxes(slide, bullets = [], box = {}, textOpts = {}) {
+  const clean = bullets.filter(Boolean).slice(0, 6);
+  if (!clean.length) return;
+
+  const x = Number(box.x || 0);
+  const y = Number(box.y || 0);
+  const w = Number(box.w || 0);
+  const h = Number(box.h || 0);
+  if (w <= 0 || h <= 0) return;
+
+  const n = clean.length;
+  const gap = n > 1 ? 0.20 : 0;
+  const totalGap = gap * (n - 1);
+  const slotH = Math.max(0.45, (h - totalGap) / n);
+
+  clean.forEach((text, idx) => {
+    const slotY = y + (idx * (slotH + gap));
+    slide.addText(String(text), {
+      x, y: slotY, w, h: slotH,
+      ...textOpts,
+      bullet: { indent: FREEPORT_THEME.listStyles.bullet.indentPt },
+      fit: 'shrink',
+      margin: 0,
+      valign: 'top',
+    });
+  });
 }
 
 function splitBullets(items = []) {
@@ -104,7 +146,8 @@ function hashText(value = '') {
 
 function chooseVariant(layout, model, slideIndex, previousVariantKey) {
   const catalog = {
-    summary_card: ['summary_card', 'summary_band'],
+    summary_card: ['summary_card'],
+    summary_band: ['summary_band'],
     reconciliation: ['reconciliation'],
     two_column: ['two_column', 'two_column_stagger'],
     metrics: ['metrics', 'metrics_strip'],
@@ -122,23 +165,53 @@ function chooseVariant(layout, model, slideIndex, previousVariantKey) {
   return selected;
 }
 
-function addSummaryCard(slide, pres, model) {
-  slide.addShape(pres.shapes.ROUNDED_RECTANGLE, {
-    x: sx(0.9), y: 1.95, w: 12.0, h: 4.85,
-    ...shapeStyle('card'),
-  });
+function resolveMasterByLayout(layout, variant) {
+  // Background mapping is deterministic per rendered layout variant.
+  if (variant === 'summary_band' || layout === 'summary_band') return FREEPORT_MASTERS.CONTENT;
+  if (layout === 'summary_card') return FREEPORT_MASTERS.EXEC_SUMMARY;
+  return FREEPORT_MASTERS.CONTENT;
+}
 
-  if (model.summary) {
-    slide.addText(model.summary, {
-      x: sx(1.2), y: 2.3, w: 11.4, h: 1.3,
-      ...textStyle('bodyLarge'),
-    });
+function addSlideForLayout(pres, layout, title, variant) {
+  const masterName = resolveMasterByLayout(layout, variant);
+  if (masterName === FREEPORT_MASTERS.EXEC_SUMMARY) {
+    return addExecutiveSummarySlide(pres);
   }
+  return addContentSlide(pres, { title: title || 'Untitled' });
+}
 
-  slide.addText(bulletRuns(model.bullets), {
-    x: sx(1.2), y: model.summary ? 3.75 : 2.3, w: 11.4, h: model.summary ? 2.9 : 4.3,
-    ...textStyle('body'),
+function isVariantCompatibleWithLayout(layout, variant) {
+  if (!variant) return false;
+  const variantsByLayout = {
+    summary_card: new Set(['summary_card', 'summary_band']),
+    reconciliation: new Set(['reconciliation']),
+    two_column: new Set(['two_column', 'two_column_stagger', 'two_column_image']),
+    metrics: new Set(['metrics', 'metrics_strip']),
+    chart_bar: new Set(['chart_bar', 'chart_bar_focus', 'chart_bar_image']),
+    action_split: new Set(['action_split', 'action_checklist']),
+  };
+  return Boolean(variantsByLayout[layout]?.has(variant));
+}
+
+function addSummaryCard(slide, pres, model) {
+  const leftHeadline = model.title || 'Executive Summary';
+  const rightBullets = listOrEmpty(model.bullets).slice(0, 6);
+  const fallbackBullets = [
+    ...listOrEmpty(model.leftBullets),
+    ...listOrEmpty(model.rightBullets),
+  ].slice(0, 6);
+  const displayBullets = rightBullets.length >= 4 ? rightBullets : fallbackBullets;
+
+  slide.addText(leftHeadline, {
+    ...FREEPORT_THEME.layout.executiveSummaryLeftBox,
+    ...textStyle('executiveSummaryHeadline', { fit: 'shrink' }),
   });
+  addDistributedBulletTextBoxes(
+    slide,
+    displayBullets,
+    FREEPORT_THEME.layout.executiveSummaryRightBox,
+    textStyle('executiveSummaryBullets', { fontSize: 23 }),
+  );
 }
 
 function addSummaryBand(slide, pres, model) {
@@ -513,35 +586,8 @@ function normalizeChartPayload(model) {
   if (!series.length) {
     series.push({ name: 'Series 1', labels: categories, values: categories.map(() => 0) });
   }
-
-  const normalizedCategories = [...categories];
-  const normalizedSeries = series.map((s) => ({ ...s, values: [...s.values] }));
-
-  // Normalize legacy "×100" currency categories so charted values render as
-  // true $/ton decimals (e.g., 53 -> 0.53) instead of inflated integers.
-  normalizedCategories.forEach((label, idx) => {
-    const raw = String(label || '');
-    const hasTimes100 = /(?:×|x)\s*100/i.test(raw);
-    if (!hasTimes100) return;
-
-    const maxAbs = Math.max(
-      ...normalizedSeries.map((s) => Math.abs(Number(s.values[idx]) || 0)),
-      0,
-    );
-    if (maxAbs >= 10) {
-      normalizedSeries.forEach((s) => {
-        s.values[idx] = Number(((Number(s.values[idx]) || 0) / 100).toFixed(4));
-      });
-    }
-
-    normalizedCategories[idx] = raw
-      .replace(/\s*(?:×|x)\s*100\s*/ig, ' ')
-      .replace(/\s+\)/g, ')')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  });
-
-  return { chart, categories: normalizedCategories, series: normalizedSeries };
+  // Renderer pass-through: preserve plan categories and values exactly as provided.
+  return { chart, categories: [...categories], series: series.map((s) => ({ ...s, values: [...s.values] })) };
 }
 
 function shouldSplitKpiCharts(categories, series) {
@@ -893,7 +939,6 @@ async function renderPlanToFreeportDeck({ plan, outputPath, imageAssets = null }
   let previousVariantKey = null;
   for (let i = 0; i < plan.slides.length; i += 1) {
     const slideModel = plan.slides[i];
-    const slide = addContentSlide(pres, { title: slideModel.title || 'Untitled' });
     const explicitImage = slideModel?.image && slideModel.image.file ? slideModel.image : null;
     const slideImage = explicitImage || (IMAGE_CAPABLE_LAYOUTS.has(slideModel.layout)
       ? selectImageForSlide(slideModel)
@@ -901,9 +946,10 @@ async function renderPlanToFreeportDeck({ plan, outputPath, imageAssets = null }
     let variantKey = chooseVariant(slideModel.layout, slideModel, i, previousVariantKey);
     if (slideModel.layout === 'two_column' && slideImage?.file) variantKey = 'two_column_image';
     if (slideModel.layout === 'chart_bar' && slideImage?.file) variantKey = 'chart_bar_image';
-    if (slideModel.layoutVariant && LAYOUT_RENDERERS[slideModel.layoutVariant]) {
+    if (slideModel.layoutVariant && LAYOUT_RENDERERS[slideModel.layoutVariant] && isVariantCompatibleWithLayout(slideModel.layout, slideModel.layoutVariant)) {
       variantKey = slideModel.layoutVariant;
     }
+    const slide = addSlideForLayout(pres, slideModel.layout, slideModel.title, variantKey);
     const renderer = LAYOUT_RENDERERS[variantKey] || LAYOUT_RENDERERS.summary_card;
     renderer(slide, pres, slideModel, { slideImage });
     previousVariantKey = variantKey;
